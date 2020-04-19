@@ -13855,8 +13855,6 @@ return d[d.length-1];};return ", funcName].join("");
         ? geometryProps.geometry
         : geometryProps.geometry(sectionContext);
 
-      ensureValidGeometry(geometry);
-
       const keyArray = getKeyArray(keyProp, geometry.length);
 
       const totalTransformation = sectionContext.getTotalTransformation(geometryNeedsScaling);
@@ -22514,7 +22512,8 @@ return d[d.length-1];};return ", funcName].join("");
     function getTickCoordinatesXAxis (
       ticks,
       yAbsolute,
-      { scaleX, finalScaleY },
+      scaleX,
+      finalScaleY,
       tickSize,
       flip
     ) {
@@ -22617,7 +22616,7 @@ return d[d.length-1];};return ", funcName].join("");
     const { Error: Error_1 } = globals;
     const file$3 = "node_modules/@snlab/florence/src/components/Guides/Axes/XAxis.svelte";
 
-    // (118:2) {#if baseLine}
+    // (125:2) {#if baseLine}
     function create_if_block_2$2(ctx) {
     	let current;
 
@@ -22674,14 +22673,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_if_block_2$2.name,
     		type: "if",
-    		source: "(118:2) {#if baseLine}",
+    		source: "(125:2) {#if baseLine}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (127:2) {#if ticks}
+    // (134:2) {#if ticks}
     function create_if_block_1$3(ctx) {
     	let current;
 
@@ -22787,14 +22786,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_if_block_1$3.name,
     		type: "if",
-    		source: "(127:2) {#if ticks}",
+    		source: "(134:2) {#if ticks}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (150:2) {#if title.length > 0}
+    // (157:2) {#if title.length > 0}
     function create_if_block$3(ctx) {
     	let current;
 
@@ -22865,7 +22864,7 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_if_block$3.name,
     		type: "if",
-    		source: "(150:2) {#if title.length > 0}",
+    		source: "(157:2) {#if title.length > 0}",
     		ctx
     	});
 
@@ -22890,7 +22889,7 @@ return d[d.length-1];};return ", funcName].join("");
     			if_block1_anchor = empty();
     			if (if_block2) if_block2.c();
     			attr_dev(g, "class", "x-axis");
-    			add_location(g, file$3, 115, 0, 3201);
+    			add_location(g, file$3, 122, 0, 3350);
     		},
     		l: function claim(nodes) {
     			throw new Error_1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -23000,6 +22999,7 @@ return d[d.length-1];};return ", funcName].join("");
     function instance$9($$self, $$props, $$invalidate) {
     	let $sectionContext;
     	let { flip = false } = $$props;
+    	let { scale = undefined } = $$props;
     	let { baseLine = true } = $$props;
     	let { baseLineColor = "black" } = $$props;
     	let { baseLineOpacity = 1 } = $$props;
@@ -23040,10 +23040,11 @@ return d[d.length-1];};return ", funcName].join("");
     	const sectionContext = subscribe$2();
 
     	validate_store(sectionContext, "sectionContext");
-    	component_subscribe($$self, sectionContext, value => $$invalidate(43, $sectionContext = value));
+    	component_subscribe($$self, sectionContext, value => $$invalidate(44, $sectionContext = value));
 
     	const writable_props = [
     		"flip",
+    		"scale",
     		"baseLine",
     		"baseLineColor",
     		"baseLineOpacity",
@@ -23090,32 +23091,33 @@ return d[d.length-1];};return ", funcName].join("");
 
     	$$self.$set = $$props => {
     		if ("flip" in $$props) $$invalidate(30, flip = $$props.flip);
+    		if ("scale" in $$props) $$invalidate(31, scale = $$props.scale);
     		if ("baseLine" in $$props) $$invalidate(0, baseLine = $$props.baseLine);
     		if ("baseLineColor" in $$props) $$invalidate(1, baseLineColor = $$props.baseLineColor);
     		if ("baseLineOpacity" in $$props) $$invalidate(2, baseLineOpacity = $$props.baseLineOpacity);
     		if ("baseLineWidth" in $$props) $$invalidate(3, baseLineWidth = $$props.baseLineWidth);
-    		if ("vjust" in $$props) $$invalidate(31, vjust = $$props.vjust);
-    		if ("yOffset" in $$props) $$invalidate(32, yOffset = $$props.yOffset);
+    		if ("vjust" in $$props) $$invalidate(32, vjust = $$props.vjust);
+    		if ("yOffset" in $$props) $$invalidate(33, yOffset = $$props.yOffset);
     		if ("ticks" in $$props) $$invalidate(4, ticks = $$props.ticks);
-    		if ("tickCount" in $$props) $$invalidate(33, tickCount = $$props.tickCount);
-    		if ("tickExtra" in $$props) $$invalidate(34, tickExtra = $$props.tickExtra);
-    		if ("tickValues" in $$props) $$invalidate(35, tickValues = $$props.tickValues);
-    		if ("tickSize" in $$props) $$invalidate(36, tickSize = $$props.tickSize);
+    		if ("tickCount" in $$props) $$invalidate(34, tickCount = $$props.tickCount);
+    		if ("tickExtra" in $$props) $$invalidate(35, tickExtra = $$props.tickExtra);
+    		if ("tickValues" in $$props) $$invalidate(36, tickValues = $$props.tickValues);
+    		if ("tickSize" in $$props) $$invalidate(37, tickSize = $$props.tickSize);
     		if ("tickWidth" in $$props) $$invalidate(5, tickWidth = $$props.tickWidth);
     		if ("tickColor" in $$props) $$invalidate(6, tickColor = $$props.tickColor);
     		if ("tickOpacity" in $$props) $$invalidate(7, tickOpacity = $$props.tickOpacity);
-    		if ("labelFormat" in $$props) $$invalidate(37, labelFormat = $$props.labelFormat);
-    		if ("labelOffset" in $$props) $$invalidate(38, labelOffset = $$props.labelOffset);
+    		if ("labelFormat" in $$props) $$invalidate(38, labelFormat = $$props.labelFormat);
+    		if ("labelOffset" in $$props) $$invalidate(39, labelOffset = $$props.labelOffset);
     		if ("labelRotate" in $$props) $$invalidate(8, labelRotate = $$props.labelRotate);
     		if ("labelFont" in $$props) $$invalidate(9, labelFont = $$props.labelFont);
     		if ("labelFontSize" in $$props) $$invalidate(10, labelFontSize = $$props.labelFontSize);
     		if ("labelFontWeight" in $$props) $$invalidate(11, labelFontWeight = $$props.labelFontWeight);
     		if ("labelOpacity" in $$props) $$invalidate(12, labelOpacity = $$props.labelOpacity);
     		if ("labelColor" in $$props) $$invalidate(13, labelColor = $$props.labelColor);
-    		if ("titleHjust" in $$props) $$invalidate(39, titleHjust = $$props.titleHjust);
-    		if ("titleXOffset" in $$props) $$invalidate(40, titleXOffset = $$props.titleXOffset);
-    		if ("titleVjust" in $$props) $$invalidate(41, titleVjust = $$props.titleVjust);
-    		if ("titleYOffset" in $$props) $$invalidate(42, titleYOffset = $$props.titleYOffset);
+    		if ("titleHjust" in $$props) $$invalidate(40, titleHjust = $$props.titleHjust);
+    		if ("titleXOffset" in $$props) $$invalidate(41, titleXOffset = $$props.titleXOffset);
+    		if ("titleVjust" in $$props) $$invalidate(42, titleVjust = $$props.titleVjust);
+    		if ("titleYOffset" in $$props) $$invalidate(43, titleYOffset = $$props.titleYOffset);
     		if ("title" in $$props) $$invalidate(14, title = $$props.title);
     		if ("titleColor" in $$props) $$invalidate(15, titleColor = $$props.titleColor);
     		if ("titleFont" in $$props) $$invalidate(16, titleFont = $$props.titleFont);
@@ -23141,6 +23143,7 @@ return d[d.length-1];};return ", funcName].join("");
     		getTickLabelCoordinatesXAxis,
     		getTitleCoordinatesXAxis,
     		flip,
+    		scale,
     		baseLine,
     		baseLineColor,
     		baseLineOpacity,
@@ -23178,6 +23181,7 @@ return d[d.length-1];};return ", funcName].join("");
     		transition,
     		sectionContext,
     		$sectionContext,
+    		scaleX,
     		yAbsolute,
     		baseLineCoordinates,
     		tickPositions,
@@ -23192,32 +23196,33 @@ return d[d.length-1];};return ", funcName].join("");
 
     	$$self.$inject_state = $$props => {
     		if ("flip" in $$props) $$invalidate(30, flip = $$props.flip);
+    		if ("scale" in $$props) $$invalidate(31, scale = $$props.scale);
     		if ("baseLine" in $$props) $$invalidate(0, baseLine = $$props.baseLine);
     		if ("baseLineColor" in $$props) $$invalidate(1, baseLineColor = $$props.baseLineColor);
     		if ("baseLineOpacity" in $$props) $$invalidate(2, baseLineOpacity = $$props.baseLineOpacity);
     		if ("baseLineWidth" in $$props) $$invalidate(3, baseLineWidth = $$props.baseLineWidth);
-    		if ("vjust" in $$props) $$invalidate(31, vjust = $$props.vjust);
-    		if ("yOffset" in $$props) $$invalidate(32, yOffset = $$props.yOffset);
+    		if ("vjust" in $$props) $$invalidate(32, vjust = $$props.vjust);
+    		if ("yOffset" in $$props) $$invalidate(33, yOffset = $$props.yOffset);
     		if ("ticks" in $$props) $$invalidate(4, ticks = $$props.ticks);
-    		if ("tickCount" in $$props) $$invalidate(33, tickCount = $$props.tickCount);
-    		if ("tickExtra" in $$props) $$invalidate(34, tickExtra = $$props.tickExtra);
-    		if ("tickValues" in $$props) $$invalidate(35, tickValues = $$props.tickValues);
-    		if ("tickSize" in $$props) $$invalidate(36, tickSize = $$props.tickSize);
+    		if ("tickCount" in $$props) $$invalidate(34, tickCount = $$props.tickCount);
+    		if ("tickExtra" in $$props) $$invalidate(35, tickExtra = $$props.tickExtra);
+    		if ("tickValues" in $$props) $$invalidate(36, tickValues = $$props.tickValues);
+    		if ("tickSize" in $$props) $$invalidate(37, tickSize = $$props.tickSize);
     		if ("tickWidth" in $$props) $$invalidate(5, tickWidth = $$props.tickWidth);
     		if ("tickColor" in $$props) $$invalidate(6, tickColor = $$props.tickColor);
     		if ("tickOpacity" in $$props) $$invalidate(7, tickOpacity = $$props.tickOpacity);
-    		if ("labelFormat" in $$props) $$invalidate(37, labelFormat = $$props.labelFormat);
-    		if ("labelOffset" in $$props) $$invalidate(38, labelOffset = $$props.labelOffset);
+    		if ("labelFormat" in $$props) $$invalidate(38, labelFormat = $$props.labelFormat);
+    		if ("labelOffset" in $$props) $$invalidate(39, labelOffset = $$props.labelOffset);
     		if ("labelRotate" in $$props) $$invalidate(8, labelRotate = $$props.labelRotate);
     		if ("labelFont" in $$props) $$invalidate(9, labelFont = $$props.labelFont);
     		if ("labelFontSize" in $$props) $$invalidate(10, labelFontSize = $$props.labelFontSize);
     		if ("labelFontWeight" in $$props) $$invalidate(11, labelFontWeight = $$props.labelFontWeight);
     		if ("labelOpacity" in $$props) $$invalidate(12, labelOpacity = $$props.labelOpacity);
     		if ("labelColor" in $$props) $$invalidate(13, labelColor = $$props.labelColor);
-    		if ("titleHjust" in $$props) $$invalidate(39, titleHjust = $$props.titleHjust);
-    		if ("titleXOffset" in $$props) $$invalidate(40, titleXOffset = $$props.titleXOffset);
-    		if ("titleVjust" in $$props) $$invalidate(41, titleVjust = $$props.titleVjust);
-    		if ("titleYOffset" in $$props) $$invalidate(42, titleYOffset = $$props.titleYOffset);
+    		if ("titleHjust" in $$props) $$invalidate(40, titleHjust = $$props.titleHjust);
+    		if ("titleXOffset" in $$props) $$invalidate(41, titleXOffset = $$props.titleXOffset);
+    		if ("titleVjust" in $$props) $$invalidate(42, titleVjust = $$props.titleVjust);
+    		if ("titleYOffset" in $$props) $$invalidate(43, titleYOffset = $$props.titleYOffset);
     		if ("title" in $$props) $$invalidate(14, title = $$props.title);
     		if ("titleColor" in $$props) $$invalidate(15, titleColor = $$props.titleColor);
     		if ("titleFont" in $$props) $$invalidate(16, titleFont = $$props.titleFont);
@@ -23227,18 +23232,20 @@ return d[d.length-1];};return ", funcName].join("");
     		if ("titleRotation" in $$props) $$invalidate(20, titleRotation = $$props.titleRotation);
     		if ("titleAnchorPoint" in $$props) $$invalidate(21, titleAnchorPoint = $$props.titleAnchorPoint);
     		if ("transition" in $$props) $$invalidate(22, transition = $$props.transition);
-    		if ("yAbsolute" in $$props) $$invalidate(44, yAbsolute = $$props.yAbsolute);
+    		if ("scaleX" in $$props) $$invalidate(45, scaleX = $$props.scaleX);
+    		if ("yAbsolute" in $$props) $$invalidate(46, yAbsolute = $$props.yAbsolute);
     		if ("baseLineCoordinates" in $$props) $$invalidate(23, baseLineCoordinates = $$props.baseLineCoordinates);
-    		if ("tickPositions" in $$props) $$invalidate(45, tickPositions = $$props.tickPositions);
+    		if ("tickPositions" in $$props) $$invalidate(47, tickPositions = $$props.tickPositions);
     		if ("tickCoordinates" in $$props) $$invalidate(24, tickCoordinates = $$props.tickCoordinates);
-    		if ("format" in $$props) $$invalidate(46, format = $$props.format);
+    		if ("format" in $$props) $$invalidate(48, format = $$props.format);
     		if ("tickLabelText" in $$props) $$invalidate(25, tickLabelText = $$props.tickLabelText);
     		if ("tickLabelCoordinates" in $$props) $$invalidate(26, tickLabelCoordinates = $$props.tickLabelCoordinates);
     		if ("labelAnchorPoint" in $$props) $$invalidate(27, labelAnchorPoint = $$props.labelAnchorPoint);
-    		if ("axisHeight" in $$props) $$invalidate(47, axisHeight = $$props.axisHeight);
+    		if ("axisHeight" in $$props) $$invalidate(49, axisHeight = $$props.axisHeight);
     		if ("titleCoordinates" in $$props) $$invalidate(28, titleCoordinates = $$props.titleCoordinates);
     	};
 
+    	let scaleX;
     	let yAbsolute;
     	let baseLineCoordinates;
     	let tickPositions;
@@ -23255,7 +23262,7 @@ return d[d.length-1];};return ", funcName].join("");
     	}
 
     	$$self.$$.update = () => {
-    		if ($$self.$$.dirty[1] & /*$sectionContext*/ 4096) {
+    		if ($$self.$$.dirty[1] & /*$sectionContext*/ 8192) {
     			// Make sure not polar
     			 {
     				if ($sectionContext.transformation === "polar") {
@@ -23264,19 +23271,26 @@ return d[d.length-1];};return ", funcName].join("");
     			}
     		}
 
-    		if ($$self.$$.dirty[1] & /*vjust, yOffset, $sectionContext*/ 4099) {
-    			// Absolute position (in pixels)
-    			 $$invalidate(44, yAbsolute = getAbsoluteYPosition(vjust, yOffset, $sectionContext));
+    		if ($$self.$$.dirty[1] & /*scale, $sectionContext*/ 8193) {
+    			// Scale
+    			 $$invalidate(45, scaleX = scale
+    			? scale.copy().range($sectionContext.rangeX)
+    			: $sectionContext.scaleX);
     		}
 
-    		if ($$self.$$.dirty[1] & /*yAbsolute, $sectionContext*/ 12288) {
+    		if ($$self.$$.dirty[1] & /*vjust, yOffset, $sectionContext*/ 8198) {
+    			// Absolute position (in pixels)
+    			 $$invalidate(46, yAbsolute = getAbsoluteYPosition(vjust, yOffset, $sectionContext));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*yAbsolute, $sectionContext*/ 40960) {
     			// Baseline
     			 $$invalidate(23, baseLineCoordinates = getBaseLineCoordinatesXAxis(yAbsolute, $sectionContext));
     		}
 
-    		if ($$self.$$.dirty[1] & /*tickValues, $sectionContext, tickCount, tickExtra*/ 4124) {
+    		if ($$self.$$.dirty[1] & /*tickValues, scaleX, tickCount, tickExtra, $sectionContext*/ 24632) {
     			// Ticks
-    			 $$invalidate(45, tickPositions = getTickPositions(tickValues, $sectionContext.scaleX, tickCount, tickExtra, $sectionContext.zoomIdentity
+    			 $$invalidate(47, tickPositions = getTickPositions(tickValues, scaleX, tickCount, tickExtra, $sectionContext.zoomIdentity
     			? {
     					t: $sectionContext.zoomIdentity.x,
     					k: $sectionContext.zoomIdentity.kx
@@ -23284,20 +23298,20 @@ return d[d.length-1];};return ", funcName].join("");
     			: undefined));
     		}
 
-    		if ($$self.$$.dirty[0] & /*flip*/ 1073741824 | $$self.$$.dirty[1] & /*tickPositions, yAbsolute, $sectionContext, tickSize*/ 28704) {
-    			 $$invalidate(24, tickCoordinates = getTickCoordinatesXAxis(tickPositions, yAbsolute, $sectionContext, tickSize, flip));
+    		if ($$self.$$.dirty[0] & /*flip*/ 1073741824 | $$self.$$.dirty[1] & /*tickPositions, yAbsolute, scaleX, $sectionContext, tickSize*/ 122944) {
+    			 $$invalidate(24, tickCoordinates = getTickCoordinatesXAxis(tickPositions, yAbsolute, scaleX, $sectionContext.finalScaleY, tickSize, flip));
     		}
 
-    		if ($$self.$$.dirty[0] & /*ticks*/ 16 | $$self.$$.dirty[1] & /*labelFormat, $sectionContext*/ 4160) {
+    		if ($$self.$$.dirty[0] & /*ticks*/ 16 | $$self.$$.dirty[1] & /*labelFormat, $sectionContext*/ 8320) {
     			// Tick labels
-    			 $$invalidate(46, format = getFormat(labelFormat, $sectionContext.scaleX, ticks.length));
+    			 $$invalidate(48, format = getFormat(labelFormat, $sectionContext.scaleX, ticks.length));
     		}
 
-    		if ($$self.$$.dirty[1] & /*tickPositions, format*/ 49152) {
+    		if ($$self.$$.dirty[1] & /*tickPositions, format*/ 196608) {
     			 $$invalidate(25, tickLabelText = tickPositions.map(format));
     		}
 
-    		if ($$self.$$.dirty[0] & /*tickCoordinates, flip*/ 1090519040 | $$self.$$.dirty[1] & /*$sectionContext, labelOffset*/ 4224) {
+    		if ($$self.$$.dirty[0] & /*tickCoordinates, flip*/ 1090519040 | $$self.$$.dirty[1] & /*$sectionContext, labelOffset*/ 8448) {
     			 $$invalidate(26, tickLabelCoordinates = getTickLabelCoordinatesXAxis(tickCoordinates, $sectionContext, labelOffset, flip));
     		}
 
@@ -23305,12 +23319,12 @@ return d[d.length-1];};return ", funcName].join("");
     			 $$invalidate(27, labelAnchorPoint = flip ? "b" : "t");
     		}
 
-    		if ($$self.$$.dirty[0] & /*baseLineWidth, labelFontSize*/ 1032 | $$self.$$.dirty[1] & /*tickSize, labelOffset*/ 160) {
+    		if ($$self.$$.dirty[0] & /*baseLineWidth, labelFontSize*/ 1032 | $$self.$$.dirty[1] & /*tickSize, labelOffset*/ 320) {
     			// Title
-    			 $$invalidate(47, axisHeight = baseLineWidth + tickSize + labelOffset + labelFontSize);
+    			 $$invalidate(49, axisHeight = baseLineWidth + tickSize + labelOffset + labelFontSize);
     		}
 
-    		if ($$self.$$.dirty[0] & /*flip, titleFontSize*/ 1073872896 | $$self.$$.dirty[1] & /*titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, axisHeight, yAbsolute*/ 81664) {
+    		if ($$self.$$.dirty[0] & /*flip, titleFontSize*/ 1073872896 | $$self.$$.dirty[1] & /*titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, axisHeight, yAbsolute*/ 310784) {
     			 $$invalidate(28, titleCoordinates = getTitleCoordinatesXAxis(titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, flip, axisHeight, titleFontSize, yAbsolute));
     		}
     	};
@@ -23347,6 +23361,7 @@ return d[d.length-1];};return ", funcName].join("");
     		titleCoordinates,
     		sectionContext,
     		flip,
+    		scale,
     		vjust,
     		yOffset,
     		tickCount,
@@ -23374,32 +23389,33 @@ return d[d.length-1];};return ", funcName].join("");
     			safe_not_equal,
     			{
     				flip: 30,
+    				scale: 31,
     				baseLine: 0,
     				baseLineColor: 1,
     				baseLineOpacity: 2,
     				baseLineWidth: 3,
-    				vjust: 31,
-    				yOffset: 32,
+    				vjust: 32,
+    				yOffset: 33,
     				ticks: 4,
-    				tickCount: 33,
-    				tickExtra: 34,
-    				tickValues: 35,
-    				tickSize: 36,
+    				tickCount: 34,
+    				tickExtra: 35,
+    				tickValues: 36,
+    				tickSize: 37,
     				tickWidth: 5,
     				tickColor: 6,
     				tickOpacity: 7,
-    				labelFormat: 37,
-    				labelOffset: 38,
+    				labelFormat: 38,
+    				labelOffset: 39,
     				labelRotate: 8,
     				labelFont: 9,
     				labelFontSize: 10,
     				labelFontWeight: 11,
     				labelOpacity: 12,
     				labelColor: 13,
-    				titleHjust: 39,
-    				titleXOffset: 40,
-    				titleVjust: 41,
-    				titleYOffset: 42,
+    				titleHjust: 40,
+    				titleXOffset: 41,
+    				titleVjust: 42,
+    				titleYOffset: 43,
     				title: 14,
     				titleColor: 15,
     				titleFont: 16,
@@ -23426,6 +23442,14 @@ return d[d.length-1];};return ", funcName].join("");
     	}
 
     	set flip(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get scale() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set scale(value) {
     		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
 
@@ -23717,19 +23741,19 @@ return d[d.length-1];};return ", funcName].join("");
 
     function get_each_context$1(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[3] = list[i];
+    	child_ctx[4] = list[i];
     	return child_ctx;
     }
 
-    // (35:4) {#each circles as circle}
+    // (42:4) {#each circles as circle}
     function create_each_block$1(ctx) {
     	let t;
     	let current;
 
     	const point = new Point({
     			props: {
-    				x: /*circle*/ ctx[3].x,
-    				y: /*circle*/ ctx[3].y,
+    				x: /*circle*/ ctx[4].x,
+    				y: /*circle*/ ctx[4].y,
     				radius,
     				fill: "white",
     				opacity: opacityCircle
@@ -23739,11 +23763,12 @@ return d[d.length-1];};return ", funcName].join("");
 
     	const label = new Label({
     			props: {
-    				x: /*circle*/ ctx[3].x,
-    				y: /*circle*/ ctx[3].y,
-    				text: /*circle*/ ctx[3].data.Name,
+    				x: /*circle*/ ctx[4].x,
+    				y: /*circle*/ ctx[4].y,
+    				text: /*circle*/ ctx[4].data.Name,
     				opacity: opacityText,
-    				fontSize
+    				fontSize,
+    				fill: textColor
     			},
     			$$inline: true
     		});
@@ -23762,13 +23787,13 @@ return d[d.length-1];};return ", funcName].join("");
     		},
     		p: function update(ctx, dirty) {
     			const point_changes = {};
-    			if (dirty & /*circles*/ 1) point_changes.x = /*circle*/ ctx[3].x;
-    			if (dirty & /*circles*/ 1) point_changes.y = /*circle*/ ctx[3].y;
+    			if (dirty & /*circles*/ 1) point_changes.x = /*circle*/ ctx[4].x;
+    			if (dirty & /*circles*/ 1) point_changes.y = /*circle*/ ctx[4].y;
     			point.$set(point_changes);
     			const label_changes = {};
-    			if (dirty & /*circles*/ 1) label_changes.x = /*circle*/ ctx[3].x;
-    			if (dirty & /*circles*/ 1) label_changes.y = /*circle*/ ctx[3].y;
-    			if (dirty & /*circles*/ 1) label_changes.text = /*circle*/ ctx[3].data.Name;
+    			if (dirty & /*circles*/ 1) label_changes.x = /*circle*/ ctx[4].x;
+    			if (dirty & /*circles*/ 1) label_changes.y = /*circle*/ ctx[4].y;
+    			if (dirty & /*circles*/ 1) label_changes.text = /*circle*/ ctx[4].data.Name;
     			label.$set(label_changes);
     		},
     		i: function intro(local) {
@@ -23793,14 +23818,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_each_block$1.name,
     		type: "each",
-    		source: "(35:4) {#each circles as circle}",
+    		source: "(42:4) {#each circles as circle}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (34:2) <Graphic {width} {height} backgroundColor="#b2ded3">
+    // (41:4) <Graphic {width} {height} padding={20} backgroundColor="#b2ded3">
     function create_default_slot(ctx) {
     	let t;
     	let current;
@@ -23816,7 +23841,15 @@ return d[d.length-1];};return ", funcName].join("");
     		each_blocks[i] = null;
     	});
 
-    	const xaxis = new XAxis({ $$inline: true });
+    	const xaxis = new XAxis({
+    			props: {
+    				scale: /*scaleX*/ ctx[1],
+    				labelColor: textColor,
+    				labelFontSize: fontSize,
+    				baseLineColor: textColor
+    			},
+    			$$inline: true
+    		});
 
     	const block = {
     		c: function create() {
@@ -23837,7 +23870,7 @@ return d[d.length-1];};return ", funcName].join("");
     			current = true;
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*circles, opacityText, fontSize, radius, opacityCircle*/ 1) {
+    			if (dirty & /*circles, opacityText, fontSize, textColor, radius, opacityCircle*/ 1) {
     				each_value = /*circles*/ ctx[0];
     				validate_each_argument(each_value);
     				let i;
@@ -23896,7 +23929,7 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_default_slot.name,
     		type: "slot",
-    		source: "(34:2) <Graphic {width} {height} backgroundColor=\\\"#b2ded3\\\">",
+    		source: "(41:4) <Graphic {width} {height} padding={20} backgroundColor=\\\"#b2ded3\\\">",
     		ctx
     	});
 
@@ -23904,15 +23937,19 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     function create_fragment$a(ctx) {
-    	let div;
+    	let div1;
     	let h1;
     	let t1;
+    	let br;
+    	let t2;
+    	let div0;
     	let current;
 
     	const graphic = new Graphic({
     			props: {
     				width,
     				height,
+    				padding: 20,
     				backgroundColor: "#b2ded3",
     				$$slots: { default: [create_default_slot] },
     				$$scope: { ctx }
@@ -23922,29 +23959,39 @@ return d[d.length-1];};return ", funcName].join("");
 
     	const block = {
     		c: function create() {
-    			div = element("div");
+    			div1 = element("div");
     			h1 = element("h1");
     			h1.textContent = "Home";
     			t1 = space();
+    			br = element("br");
+    			t2 = space();
+    			div0 = element("div");
     			create_component(graphic.$$.fragment);
-    			attr_dev(h1, "class", "svelte-1aiu6qq");
-    			add_location(h1, file$4, 32, 2, 929);
-    			add_location(div, file$4, 31, 0, 921);
+    			attr_dev(h1, "class", "svelte-17p6mhd");
+    			add_location(h1, file$4, 37, 2, 1046);
+    			add_location(br, file$4, 38, 2, 1062);
+    			attr_dev(div0, "id", "beeswarm");
+    			attr_dev(div0, "class", "svelte-17p6mhd");
+    			add_location(div0, file$4, 39, 2, 1069);
+    			add_location(div1, file$4, 36, 0, 1038);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
     		},
     		m: function mount(target, anchor) {
-    			insert_dev(target, div, anchor);
-    			append_dev(div, h1);
-    			append_dev(div, t1);
-    			mount_component(graphic, div, null);
+    			insert_dev(target, div1, anchor);
+    			append_dev(div1, h1);
+    			append_dev(div1, t1);
+    			append_dev(div1, br);
+    			append_dev(div1, t2);
+    			append_dev(div1, div0);
+    			mount_component(graphic, div0, null);
     			current = true;
     		},
     		p: function update(ctx, [dirty]) {
     			const graphic_changes = {};
 
-    			if (dirty & /*$$scope, circles*/ 65) {
+    			if (dirty & /*$$scope, circles*/ 129) {
     				graphic_changes.$$scope = { dirty, ctx };
     			}
 
@@ -23960,7 +24007,7 @@ return d[d.length-1];};return ", funcName].join("");
     			current = false;
     		},
     		d: function destroy(detaching) {
-    			if (detaching) detach_dev(div);
+    			if (detaching) detach_dev(div1);
     			destroy_component(graphic);
     		}
     	};
@@ -23978,14 +24025,16 @@ return d[d.length-1];};return ", funcName].join("");
 
     const width = 1000;
     const height = 400;
-    const radiusforce = 20;
-    const radius = 19;
-    const opacityCircle = 0.5;
+    const radiusforce = 25;
+    const radius = 23;
+    const opacityCircle = 0.4;
     const opacityText = 0.8;
     const fontSize = 12;
+    const textColor = "#54918d";
 
     function instance$a($$self, $$props, $$invalidate) {
     	const scaleX = linear$1().domain([1000, 6000]).range([0, width]); // lower and upper bound of dataset
+    	const scaleRadius = linear$1().domain([1000, 6000]).range([5, radius]);
 
     	let circles = data.map(d => ({
     		x: scaleX(d.Weight_in_lbs),
@@ -24026,7 +24075,9 @@ return d[d.length-1];};return ", funcName].join("");
     		opacityCircle,
     		opacityText,
     		fontSize,
+    		textColor,
     		scaleX,
+    		scaleRadius,
     		circles,
     		simulation
     	});
@@ -24039,7 +24090,7 @@ return d[d.length-1];};return ", funcName].join("");
     		$$self.$inject_state($$props.$$inject);
     	}
 
-    	return [circles];
+    	return [circles, scaleX];
     }
 
     class Home extends SvelteComponentDev {

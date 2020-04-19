@@ -16,7 +16,7 @@
     "svelte": "^3.0.0"
   },
   "dependencies": {
-    "@snlab/florence": "^0.1.19",
+    "@snlab/florence": "^0.1.20",
     "@snlab/florence-datacontainer": "^0.1.8",
     "d3-force": "^2.0.1",
     "d3-scale": "^3.2.1",
