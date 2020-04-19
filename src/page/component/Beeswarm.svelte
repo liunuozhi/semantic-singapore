@@ -7,12 +7,15 @@
   // data
   export let pageTitle = "";
   export let data = "";
+  export let text = ""
+  export let dataUpperBound = 10
+  export let dataLowerBound = 0
 
   // set up
   const width = 1200; // canvas
-  const height = 400; // canvas
-  const radiusUpperBound = 50; // the radius range of circle will between [ radiusLowerBound, radiusUpperBound ]
-  const radiusLowerBound = 3;
+  const height = 300; // canvas
+  const radiusUpperBound = 30; // the radius range of circle will between [ radiusLowerBound, radiusUpperBound ]
+  const radiusLowerBound = 0;
   // set color
   const backgroundColor = "#b2ded3";
   const axisColor = "#54918d";
@@ -21,23 +24,23 @@
   const mouseOverColor = "#FF4D4D";
   // set other aes property
   const opacityCircle = 0.7;
-  const opacityText = 1; // label of circle
+  const opacityText = 0.8; // label of circle
   const fontSize = 12; // label of circle & Axis
 
   // scale the data for x position and radius
   const scaleX = scaleLinear()
-    .domain([1000, 6000]) // TODO: domain of dataset
+    .domain([dataLowerBound, dataUpperBound]) // TODO: domain of dataset
     .range([0, width]);
   const scaleRadius = scaleLinear()
-    .domain([1000, 6000])
+    .domain([dataLowerBound, dataUpperBound])
     .range([radiusLowerBound, radiusUpperBound]);
 
   // copy data to a new container and format the data structures
   let circles = data
     .map(d => ({
-      x: scaleX(d.Weight_in_lbs),
+      x: scaleX(d.count),
       y: height / 2,
-      radius: scaleRadius(d.Weight_in_lbs),
+      radius: scaleRadius(d.count),
       data: d
     }))
     .sort((a, b) => a.x - b.x);
@@ -56,6 +59,9 @@
     e.target.style.fill = mouseOverColor;
     hoverWord = e.target.textContent;
   };
+
+  console.log(circles);
+  
 </script>
 
 <div>
@@ -89,7 +95,7 @@
             e.target.style.fontSize = fontSize;
             e.target.style.fill = labelColor;
           }}>
-          {circle.data.Name}
+          {circle.data.word}
         </text>
       {/each}
       <XAxis
@@ -100,16 +106,15 @@
     </Graphic>
   </div>
 
-  <h2>Distribution of words</h2>
-  <Textdemo word={hoverWord}/>
+  <h2 class="description">Distribution of words</h2>
+  <p class="description">{pageTitle}</p>
+  <!-- <Textdemo word={hoverWord}/> -->
+  <Textdemo text={text} token={hoverWord}/>
 </div>
 
 <style>
-  div {
-    text-align: center;
-  }
-  h2 {
+  .description {
     color: #53aeb6;
-    /* text-align: center; */
+    text-align: center;
   }
 </style>
