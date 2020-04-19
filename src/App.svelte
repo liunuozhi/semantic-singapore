@@ -1,6 +1,6 @@
 <script>
-  import Home from "./Home.svelte";
-  import About from "./About.svelte";
+  import Home from "./page/Home.svelte";
+  import About from "./page/About.svelte";
   export let nav = "home";
 
   let class1, class2;
