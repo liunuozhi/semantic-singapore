@@ -6,11 +6,12 @@
 
   // set up
   const width = 1000;
-  const height = 100;
-  const radiusforce = 10
-  const radius = 10
-  const opacity= 0.5
-  const fontSize=5
+  const height = 400;
+  const radiusforce = 20
+  const radius = 19
+  const opacityCircle= 0.5
+  const opacityText = 0.8
+  const fontSize= 12
 
   // scale the data
   const scaleX = scaleLinear()
@@ -32,9 +33,9 @@
   <h1>Home</h1>
   <Graphic {width} {height} backgroundColor="#b2ded3">
     {#each circles as circle}
-       <!-- <Point x={circle.x} y={circle.y}  radius={radius} fill={"white"} {opacity}/> -->
+       <Point x={circle.x} y={circle.y}  radius={radius} fill={"white"} opacity={opacityCircle}/>
        <!-- <Symbol_ x={circle.x} y={circle.y} shape="star5" size={radius} fill="white"/> -->
-       <Label x={circle.x} y={circle.y} text={circle.data.Name} {opacity} font-size="5"/>
+       <Label x={circle.x} y={circle.y} text={circle.data.Name} opacity={opacityText} {fontSize}/>
        
     {/each}
     <XAxis />

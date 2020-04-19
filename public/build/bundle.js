@@ -23721,30 +23721,50 @@ return d[d.length-1];};return ", funcName].join("");
     	return child_ctx;
     }
 
-    // (34:4) {#each circles as circle}
+    // (35:4) {#each circles as circle}
     function create_each_block$1(ctx) {
+    	let t;
     	let current;
+
+    	const point = new Point({
+    			props: {
+    				x: /*circle*/ ctx[3].x,
+    				y: /*circle*/ ctx[3].y,
+    				radius,
+    				fill: "white",
+    				opacity: opacityCircle
+    			},
+    			$$inline: true
+    		});
 
     	const label = new Label({
     			props: {
     				x: /*circle*/ ctx[3].x,
     				y: /*circle*/ ctx[3].y,
     				text: /*circle*/ ctx[3].data.Name,
-    				opacity,
-    				"font-size": "5"
+    				opacity: opacityText,
+    				fontSize
     			},
     			$$inline: true
     		});
 
     	const block = {
     		c: function create() {
+    			create_component(point.$$.fragment);
+    			t = space();
     			create_component(label.$$.fragment);
     		},
     		m: function mount(target, anchor) {
+    			mount_component(point, target, anchor);
+    			insert_dev(target, t, anchor);
     			mount_component(label, target, anchor);
     			current = true;
     		},
     		p: function update(ctx, dirty) {
+    			const point_changes = {};
+    			if (dirty & /*circles*/ 1) point_changes.x = /*circle*/ ctx[3].x;
+    			if (dirty & /*circles*/ 1) point_changes.y = /*circle*/ ctx[3].y;
+    			point.$set(point_changes);
     			const label_changes = {};
     			if (dirty & /*circles*/ 1) label_changes.x = /*circle*/ ctx[3].x;
     			if (dirty & /*circles*/ 1) label_changes.y = /*circle*/ ctx[3].y;
@@ -23753,14 +23773,18 @@ return d[d.length-1];};return ", funcName].join("");
     		},
     		i: function intro(local) {
     			if (current) return;
+    			transition_in(point.$$.fragment, local);
     			transition_in(label.$$.fragment, local);
     			current = true;
     		},
     		o: function outro(local) {
+    			transition_out(point.$$.fragment, local);
     			transition_out(label.$$.fragment, local);
     			current = false;
     		},
     		d: function destroy(detaching) {
+    			destroy_component(point, detaching);
+    			if (detaching) detach_dev(t);
     			destroy_component(label, detaching);
     		}
     	};
@@ -23769,14 +23793,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_each_block$1.name,
     		type: "each",
-    		source: "(34:4) {#each circles as circle}",
+    		source: "(35:4) {#each circles as circle}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (33:2) <Graphic {width} {height} backgroundColor="#b2ded3">
+    // (34:2) <Graphic {width} {height} backgroundColor="#b2ded3">
     function create_default_slot(ctx) {
     	let t;
     	let current;
@@ -23813,7 +23837,7 @@ return d[d.length-1];};return ", funcName].join("");
     			current = true;
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*circles, opacity*/ 1) {
+    			if (dirty & /*circles, opacityText, fontSize, radius, opacityCircle*/ 1) {
     				each_value = /*circles*/ ctx[0];
     				validate_each_argument(each_value);
     				let i;
@@ -23872,7 +23896,7 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_default_slot.name,
     		type: "slot",
-    		source: "(33:2) <Graphic {width} {height} backgroundColor=\\\"#b2ded3\\\">",
+    		source: "(34:2) <Graphic {width} {height} backgroundColor=\\\"#b2ded3\\\">",
     		ctx
     	});
 
@@ -23904,8 +23928,8 @@ return d[d.length-1];};return ", funcName].join("");
     			t1 = space();
     			create_component(graphic.$$.fragment);
     			attr_dev(h1, "class", "svelte-1aiu6qq");
-    			add_location(h1, file$4, 31, 2, 895);
-    			add_location(div, file$4, 30, 0, 887);
+    			add_location(h1, file$4, 32, 2, 929);
+    			add_location(div, file$4, 31, 0, 921);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -23953,11 +23977,12 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     const width = 1000;
-    const height = 100;
-    const radiusforce = 10;
-    const radius = 10;
-    const opacity = 0.5;
-    const fontSize = 5;
+    const height = 400;
+    const radiusforce = 20;
+    const radius = 19;
+    const opacityCircle = 0.5;
+    const opacityText = 0.8;
+    const fontSize = 12;
 
     function instance$a($$self, $$props, $$invalidate) {
     	const scaleX = linear$1().domain([1000, 6000]).range([0, width]); // lower and upper bound of dataset
@@ -23998,7 +24023,8 @@ return d[d.length-1];};return ", funcName].join("");
     		height,
     		radiusforce,
     		radius,
-    		opacity,
+    		opacityCircle,
+    		opacityText,
     		fontSize,
     		scaleX,
     		circles,
