@@ -1,11 +1,11 @@
 <script>
-  import { data } from "../data.js";
   import { scaleLinear } from "d3-scale";
   import { forceSimulation, forceX, forceY, forceCollide } from "d3-force";
   import { Graphic, Point, Label, XAxis } from "@snlab/florence";
 
   // data
   export let pageTitle = "";
+  export let data = ""
 
   // set up
   const width = 1200; // canvas
@@ -26,10 +26,11 @@
   const scaleX = scaleLinear()
     .domain([1000, 6000]) // TODO: domain of dataset
     .range([0, width]);
-
   const scaleRadius = scaleLinear()
     .domain([1000, 6000])
     .range([radiusLowerBound, radiusUpperBound]);
+  
+  // copy data to a new container and format the data structures
   let circles = data
     .map(d => ({
       x: scaleX(d.Weight_in_lbs),
