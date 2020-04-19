@@ -2,15 +2,15 @@
   import { data } from "./data.js"
   import { scaleLinear } from "d3-scale";
   import { forceSimulation, forceX, forceY, forceCollide } from "d3-force"
-  import { Graphic, Point, Symbol_, Label, XAxis } from "@snlab/florence";
+  import { Graphic, Point, Label, XAxis } from "@snlab/florence";
 
   // set up
-  const width = 1000;
+  const width = 1200;
   const height = 400;
-  const radiusforce = 25
-  const radius = 23
+  const radiusforce = 50
+  const radiusLowerBound = 3
   const opacityCircle= 0.4
-  const opacityText = 0.8
+  const opacityText = 0.7
   const fontSize= 12
   const textColor = "#54918d"
 
@@ -21,13 +21,13 @@
 
   const scaleRadius = scaleLinear()
     .domain([1000, 6000])
-    .range([5, radius])
-  let circles = data.map(d => ({x: scaleX(d.Weight_in_lbs), y: height/2, data: d})).sort((a, b) => a.x - b.x);
+    .range([radiusLowerBound, radiusforce])
+  let circles = data.map(d => ({x: scaleX(d.Weight_in_lbs), y: height/2, radius: scaleRadius(d.Weight_in_lbs), data: d})).sort((a, b) => a.x - b.x);
   console.log(circles)
 
   // init simulation
   const simulation = forceSimulation(circles)
-    .force("collide", forceCollide(radiusforce))
+    .force("collide", forceCollide( (d)=> d.radius ))
     .force("x", forceX(d => d.x))
     .force("y", forceY(height / 2))
     .on("tick", () => circles=circles)
@@ -36,12 +36,10 @@
 
 <div>
   <h1>Home</h1>
-  <br>
   <div id="beeswarm">
     <Graphic {width} {height} padding={20} backgroundColor="#b2ded3">
     {#each circles as circle}
-       <Point x={circle.x} y={circle.y}  radius={radius} fill={"white"} opacity={opacityCircle}/>
-       <!-- <Symbol_ x={circle.x} y={circle.y} shape="star5" size={radius} fill="white"/> -->
+       <Point x={circle.x} y={circle.y}  radius={circle.radius-3} fill={"white"} opacity={opacityCircle}/>
        <Label x={circle.x} y={circle.y} text={circle.data.Name} opacity={opacityText} {fontSize} fill={textColor}/>
        
     {/each}
@@ -54,12 +52,10 @@
 <style>
   h1 {
     color: #53aeb6;
-    text-align: center;
-    padding-top: 20 px;
   }
 
-#beeswarm {
-  margin: 0 auto;
-}
+  #beeswarm{
+    text-align: center;
+  }
 
 </style>
