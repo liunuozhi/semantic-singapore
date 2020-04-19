@@ -2,10 +2,11 @@
   import { scaleLinear } from "d3-scale";
   import { forceSimulation, forceX, forceY, forceCollide } from "d3-force";
   import { Graphic, Point, Label, XAxis } from "@snlab/florence";
+  import Textdemo from "./Textdemo.svelte"
 
   // data
   export let pageTitle = "";
-  export let data = ""
+  export let data = "";
 
   // set up
   const width = 1200; // canvas
@@ -13,13 +14,14 @@
   const radiusUpperBound = 50; // the radius range of circle will between [ radiusLowerBound, radiusUpperBound ]
   const radiusLowerBound = 3;
   // set color
-  const backgroundColor = "#b2ded3"
-  const axisColor = "#54918d"
-  const labelColor = "white"
-  const circleColor = axisColor
+  const backgroundColor = "#b2ded3";
+  const axisColor = "#54918d";
+  const labelColor = "white";
+  const circleColor = axisColor;
+  const mouseOverColor = "#FF4D4D";
   // set other aes property
-  const opacityCircle = 0.3;
-  const opacityText = 0.8; // label of circle
+  const opacityCircle = 0.7;
+  const opacityText = 1; // label of circle
   const fontSize = 12; // label of circle & Axis
 
   // scale the data for x position and radius
@@ -29,7 +31,7 @@
   const scaleRadius = scaleLinear()
     .domain([1000, 6000])
     .range([radiusLowerBound, radiusUpperBound]);
-  
+
   // copy data to a new container and format the data structures
   let circles = data
     .map(d => ({
@@ -46,30 +48,49 @@
     .force("x", forceX(d => d.x))
     .force("y", forceY(height / 2))
     .on("tick", () => (circles = circles));
+
+  // mouse over handler
+  let hoverWord = "";
+  const mouseoverHandler = e => {
+    e.target.style.fontSize = 20;
+    e.target.style.fill = mouseOverColor;
+    hoverWord = e.target.textContent;
+  };
 </script>
 
 <div>
   <div id="beeswarm">
     <Graphic {width} {height} padding={20} {backgroundColor}>
       <!-- name of the page -->
-      <Label x={30} y={30} text={pageTitle} fill={labelColor} anchorPoint="lt" fontWeight="bold"/>
-      {#each circles as circle}
-        <!-- draw circle -->
-        <Point
-          x={circle.x}
-          y={circle.y}
-          radius={circle.radius - 3}
-          fill={circleColor}
-          opacity={opacityCircle} />
+      <Label
+        x={30}
+        y={30}
+        text={pageTitle}
+        fill={labelColor}
+        anchorPoint="lt"
+        fontWeight="bold" />
 
-        <!-- add label for each circle -->
-        <Label
+      {#each circles as circle}
+        <circle
+          cx={circle.x}
+          cy={circle.y}
+          r={circle.radius - 3}
+          fill={circleColor}
+          fill-opacity={opacityCircle} />
+        <text
           x={circle.x}
           y={circle.y}
-          text={circle.data.Name}
+          fill={labelColor}
+          font-size={fontSize}
           opacity={opacityText}
-          {fontSize}
-          fill={labelColor} />
+          text-anchor="middle"
+          on:mouseover={mouseoverHandler}
+          on:mouseout={e => {
+            e.target.style.fontSize = fontSize;
+            e.target.style.fill = labelColor;
+          }}>
+          {circle.data.Name}
+        </text>
       {/each}
       <XAxis
         scale={scaleX}
@@ -80,6 +101,7 @@
   </div>
 
   <h2>Distribution of words</h2>
+  <Textdemo word={hoverWord}/>
 </div>
 
 <style>
