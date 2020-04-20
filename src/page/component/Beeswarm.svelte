@@ -59,8 +59,6 @@
     e.target.style.fill = mouseOverColor;
     hoverWord = e.target.textContent;
   };
-
-  console.log(circles);
   
 </script>
 

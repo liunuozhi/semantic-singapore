@@ -9,7 +9,6 @@
     renderText = text.replace(reg, str => {
       return '<span style="color:white; background-color: #54918d;">' + str + "</span>";
     });
-    console.log(renderText);
   }
 </script>
 
