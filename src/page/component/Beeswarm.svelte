@@ -12,8 +12,8 @@
   export let dataLowerBound = 0
 
   // set up
-  const width = 1200; // canvas
-  const height = 300; // canvas
+  const width = 700; // canvas
+  const height = 700; // canvas
   const radiusUpperBound = 30; // the radius range of circle will between [ radiusLowerBound, radiusUpperBound ]
   const radiusLowerBound = 0;
   // set color
