@@ -5,4 +5,4 @@ mapbox.accessToken = "pk.eyJ1IjoibGl1bnVvemhpIiwiYSI6ImNrOWYzZjk4ZDA3bjEzbHRiY25
 
 const key = {};
 
-export { mapbox };
+export { mapbox, key };

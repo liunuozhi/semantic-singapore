@@ -1,53 +1,50 @@
 <script>
-  "use strict";
-  import { onMount } from "svelte";
-  import { mapbox } from "./mapbox.js";
+	import { onMount, setContext } from 'svelte';
+	import { mapbox, key } from './mapbox.js';
 
-  // set the context here...
+	setContext(key, {
+		getMap: () => map
+	});
 
-  // export let lat;
-  // export let lon;
-  // export let zoom;
+	export let lat;
+	export let lon;
+	export let zoom;
 
-  const lat = 1.342669;
-  const lon = 103.818275;
-  const zoom = 10;
+	let container;
+	let map;
 
-  let container;
-  let map;
+	onMount(() => {
+		const link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.href = 'https://unpkg.com/mapbox-gl/dist/mapbox-gl.css';
 
-  onMount(() => {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/mapbox-gl/dist/mapbox-gl.css";
+		link.onload = () => {
+			map = new mapbox.Map({
+				container,
+				style: 'mapbox://styles/liunuozhi/ck9f3xv0809k01it36p6ci0e2',
+				center: [lon, lat],
+				zoom
+			});
+		};
 
-    link.onload = () => {
-      map = new mapbox.Map({
-        container,
-        style: "mapbox://styles/liunuozhi/ck9f3xv0809k01it36p6ci0e2",
-        center: [lon, lat],
-        zoom
-      });
-    };
+		document.head.appendChild(link);
 
-    document.head.appendChild(link);
-
-    return () => {
-      map.remove();
-      link.parentNode.removeChild(link);
-    };
-  });
+		return () => {
+			map.remove();
+			link.parentNode.removeChild(link);
+		};
+	});
 </script>
 
-<div bind:this={container}>
-  {#if map}
-    <slot />
-  {/if}
-</div>
-
 <style>
-  div {
-    width: 700px;
-    height: 400px;
-  }
+	div {
+		width: 500px;
+		height: 500px;
+	}
 </style>
+
+<div bind:this={container}>
+	{#if map}
+		<slot></slot>
+	{/if}
+</div>
