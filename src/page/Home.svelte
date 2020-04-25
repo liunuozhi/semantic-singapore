@@ -1,27 +1,29 @@
 <script>
   import SGMap from "./component/SGMap.svelte";
+  import Beeswarm from "./component/Beeswarm.svelte";
 
-  // mouse over return hex ID
-  let hexID = null
-  const selectHexIDHandler = (e) => {hexID = e.detail.selectHexId}
+  // mouse click & return hex ID
+  let hexID = null;
+  const selectHexIDHandler = e => {
+    hexID = e.detail.selectHexId;
+  };
 </script>
 
-<div class="container-1">
-<div class="map">
-  <SGMap on:selectHexID={selectHexIDHandler}/>
-</div>
-<div>
-  <p>{ hexID }</p>
-</div>
+<div class="container">
+  <div>
+    <SGMap on:selectHexID={selectHexIDHandler} />
+    <p>{hexID}</p>
+  </div>
+
+  <div>
+    <Beeswarm />
+
+  </div>
+
 </div>
 
 <style>
-  .container-1{
+  .container {
     display: flex;
-    flex-wrap: wrap;
-  }
-
-  .map {
-    padding: 20px;
   }
 </style>

@@ -1,21 +1,20 @@
 <script>
+  import { onMount } from "svelte";
   import { scaleLinear } from "d3-scale";
+  import { csvParse, autoType } from "d3-dsv";
   import { forceSimulation, forceX, forceY, forceCollide } from "d3-force";
   import { Graphic, Point, Label, XAxis } from "@snlab/florence";
-  import Textdemo from "./Textdemo.svelte"
+  import DataContainer from "@snlab/florence-datacontainer";
+  import { TRIGRAM_HEX } from "./trigram_hex.js";
+  import { TRIGRAM_COUNT } from "./trigramCount.js";
 
-  // data
-  export let pageTitle = "";
-  export let data = "";
-  export let text = ""
-  export let dataUpperBound = 10
-  export let dataLowerBound = 0
+  //load data
+  const dataContainer = new DataContainer(TRIGRAM_HEX);
+  const trigramCountContainer = new DataContainer(TRIGRAM_COUNT);
 
   // set up
-  const width = 700; // canvas
-  const height = 700; // canvas
-  const radiusUpperBound = 30; // the radius range of circle will between [ radiusLowerBound, radiusUpperBound ]
-  const radiusLowerBound = 0;
+  const width = 500; // canvas
+  const height = 500; // canvas
   // set color
   const backgroundColor = "#b2ded3";
   const axisColor = "#54918d";
@@ -27,92 +26,70 @@
   const opacityText = 0.8; // label of circle
   const fontSize = 12; // label of circle & Axis
 
+  // countGram <= count all gram regarding hexID
+  let rangeCount = trigramCountContainer.domain("count");
+  const rangeCountLowerBound = rangeCount[0] - 100;
+  const rangeCountUpperBound = rangeCount[1] + 100;
+  rangeCount = [rangeCountLowerBound, rangeCountUpperBound];
+
   // scale the data for x position and radius
   const scaleX = scaleLinear()
-    .domain([dataLowerBound, dataUpperBound]) // TODO: domain of dataset
+    .domain(rangeCount)
     .range([0, width]);
   const scaleRadius = scaleLinear()
-    .domain([dataLowerBound, dataUpperBound])
-    .range([radiusLowerBound, radiusUpperBound]);
-
+    .domain(rangeCount)
+    .range([10, 40]);
   // copy data to a new container and format the data structures
-  let circles = data
-    .map(d => ({
-      x: scaleX(d.count),
-      y: height / 2,
-      radius: scaleRadius(d.count),
-      data: d
-    }))
-    .sort((a, b) => a.x - b.x);
-
+  let circles = TRIGRAM_COUNT.map(d => ({
+    x: scaleX(d.count),
+    y: height / 2,
+    radius: scaleRadius(d.count),
+    data: d
+  })).sort((a, b) => a.x - b.x);
   // run simulation
   const simulation = forceSimulation(circles)
     .force("collide", forceCollide(d => d.radius))
-    .force("x", forceX(d => d.x))
+    .force("x", forceX(width / 2))
     .force("y", forceY(height / 2))
     .on("tick", () => (circles = circles));
 
-  // mouse over handler
-  let hoverWord = "";
+  let hoverWord = ""
   const mouseoverHandler = e => {
     e.target.style.fontSize = 20;
     e.target.style.fill = mouseOverColor;
     hoverWord = e.target.textContent;
   };
-  
 </script>
 
-<div>
-  <div id="beeswarm">
-    <Graphic {width} {height} padding={20} {backgroundColor}>
-      <!-- name of the page -->
-      <Label
-        x={30}
-        y={30}
-        text={pageTitle}
+<div id="beeswarm">
+
+  <Graphic {width} {height} padding={20} {backgroundColor}>
+
+    {#each circles as circle}
+      <circle
+        cx={circle.x}
+        cy={circle.y}
+        r={circle.radius - 2}
+        fill={circleColor}
+        fill-opacity={opacityCircle} />
+      <text
+        x={circle.x}
+        y={circle.y}
         fill={labelColor}
-        anchorPoint="lt"
-        fontWeight="bold" />
+        font-size={fontSize}
+        opacity={opacityText}
+        text-anchor="middle"
+        on:mouseover={mouseoverHandler}
+        on:mouseout={e => {
+          e.target.style.fontSize = fontSize;
+          e.target.style.fill = labelColor;
+        }}>
+        {circle.data.gram}
+      </text>
+    {/each}
 
-      {#each circles as circle}
-        <circle
-          cx={circle.x}
-          cy={circle.y}
-          r={circle.radius - 3}
-          fill={circleColor}
-          fill-opacity={opacityCircle} />
-        <text
-          x={circle.x}
-          y={circle.y}
-          fill={labelColor}
-          font-size={fontSize}
-          opacity={opacityText}
-          text-anchor="middle"
-          on:mouseover={mouseoverHandler}
-          on:mouseout={e => {
-            e.target.style.fontSize = fontSize;
-            e.target.style.fill = labelColor;
-          }}>
-          {circle.data.word}
-        </text>
-      {/each}
-      <XAxis
-        scale={scaleX}
-        labelColor={axisColor}
-        labelFontSize={fontSize}
-        baseLineColor={axisColor} />
-    </Graphic>
-  </div>
+  </Graphic>
 
-  <h2 class="description">Distribution of words</h2>
-  <p class="description">{pageTitle}</p>
-  <!-- <Textdemo word={hoverWord}/> -->
-  <Textdemo text={text} token={hoverWord}/>
+  <h1>{hoverWord}</h1>
+
 </div>
-
-<style>
-  .description {
-    color: #53aeb6;
-    text-align: center;
-  }
-</style>

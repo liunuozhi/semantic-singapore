@@ -8,7 +8,6 @@
   <div class="basemap">
     <BaseMap on:selectHexID/>
   </div>
-  <!-- TODO: add hexagons -->
 
 <style>
   .basemap {
