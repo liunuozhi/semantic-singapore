@@ -5,10 +5,11 @@
   import DataContainer from "@snlab/florence-datacontainer";
   import { TRIGRAM_HEX } from "./trigram_hex.js";
   import { TRIGRAM_COUNT } from "./trigramCount.js";
+  import { hoverWordWrite } from "./store.js";
 
   //////load data
   const dataContainer = new DataContainer(TRIGRAM_HEX); // hex, gram, n
-  const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count 
+  const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count
 
   ///// set up
   const width = 500; // canvas
@@ -51,11 +52,18 @@
     .force("y", forceY(height / 2))
     .on("tick", () => (circles = circles));
 
-  let hoverWord = ""
+  let hoverWord = 0;
   const mouseoverHandler = e => {
     e.target.style.fontSize = 20;
     e.target.style.fill = mouseOverColor;
     hoverWord = e.target.textContent;
+  };
+  const mouseoutHandler = e => {
+    e.target.style.fontSize = fontSize;
+    e.target.style.fill = labelColor;
+  };
+  const clickHandler = e => {
+    hoverWordWrite.set(hoverWord);
   };
 </script>
 
@@ -78,10 +86,8 @@
         opacity={opacityText}
         text-anchor="middle"
         on:mouseover={mouseoverHandler}
-        on:mouseout={e => {
-          e.target.style.fontSize = fontSize;
-          e.target.style.fill = labelColor;
-        }}>
+        on:mouseout={mouseoutHandler}
+        on:click={clickHandler}>
         {circle.data.gram}
       </text>
     {/each}

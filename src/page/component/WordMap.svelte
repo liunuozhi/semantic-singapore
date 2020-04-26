@@ -1,15 +1,20 @@
 <script>
   "use strict";
-  import { clickHexIdWrite } from "./store.js";
+  import { clickHexIdWrite, hoverWordWrite } from "./store.js";
   import { PolygonLayer } from "@snlab/florence";
 
   ////// set up
   export let hex;
-  const hexFill = "#b2ded3";
+  const hexFill = "black";
+
+  // TODO: filter hexgon by word
   
   ////// event Listener
   // select Hex
   let selectHexId = null;
+  let hoverWord = null;
+  hoverWordWrite.subscribe(value => hoverWord = value)
+
   const mouseOverHandler = e => {
     selectHexId = e.key;
   };
@@ -17,6 +22,7 @@
   const mouseClickHandler = () => {
     clickHexIdWrite.set(selectHexId);
   };
+
 </script>
 
 <PolygonLayer
