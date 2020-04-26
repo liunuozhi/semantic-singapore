@@ -9,25 +9,25 @@
     createGeoScales,
     PointLayer
   } from "@snlab/florence";
-  import { schemeAccent } from "d3-scale-chromatic";
 
-  // setup geojson
+  ////// data
   const hex = new DataContainer(HEX);
   const geoScale = createGeoScales(hex.domain("$geometry"));
   console.log(hex);
   
-  // set up canvas
+  ////// set up
   const width = 700;
   const height = 400;
   const hexFill = "#b2ded3"
-
-  // mouse over Hexgon, return hex_id
+  
+  ////// eventListener
+  // select Hex
   let selectHexId = null;
-  const dispatch = createEventDispatcher();
   const mouseOverHandler = e => {
     selectHexId = e.key;
   };
-
+  // dispatch selected Hex
+  const dispatch = createEventDispatcher();
   const mouseClickHandler = () => {
     dispatch("selectHexID", { selectHexId: selectHexId });
   };

@@ -1,7 +1,5 @@
 <script>
-  import { onMount } from "svelte";
   import { scaleLinear } from "d3-scale";
-  import { csvParse, autoType } from "d3-dsv";
   import { forceSimulation, forceX, forceY, forceCollide } from "d3-force";
   import { Graphic, Point, Label, XAxis } from "@snlab/florence";
   import DataContainer from "@snlab/florence-datacontainer";
@@ -11,6 +9,7 @@
   //load data
   const dataContainer = new DataContainer(TRIGRAM_HEX);
   const trigramCountContainer = new DataContainer(TRIGRAM_COUNT);
+  console.log(dataContainer);
 
   // set up
   const width = 500; // canvas
