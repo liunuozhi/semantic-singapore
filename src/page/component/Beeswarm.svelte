@@ -95,6 +95,4 @@
 
   </Graphic>
 
-  <h1>{hoverWord}</h1>
-
 </div>

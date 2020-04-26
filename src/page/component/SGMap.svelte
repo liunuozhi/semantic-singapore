@@ -17,8 +17,6 @@
 
   ////// data
   const hex = new DataContainer(HEX);
-  console.log(hex);
-
   ////// basemap set up
   const geoScale = createGeoScales(hex.domain("$geometry"));
   const width = 700;
