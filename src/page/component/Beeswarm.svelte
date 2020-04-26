@@ -8,7 +8,6 @@
   import { hoverWordWrite } from "./store.js";
 
   //////load data
-  const dataContainer = new DataContainer(TRIGRAM_HEX); // hex, gram, n
   const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count
 
   ///// set up

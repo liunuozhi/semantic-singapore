@@ -1,35 +1,47 @@
 <script>
   "use strict";
-  import { clickHexIdWrite, hoverWordWrite } from "./store.js";
+  import { hoverWordWrite } from "./store.js";
   import { PolygonLayer } from "@snlab/florence";
+  import { TRIGRAM_HEX } from "./trigram_hex.js";
+  import DataContainer from "@snlab/florence-datacontainer";
 
   ////// set up
   export let hex;
-  const hexFill = "black";
+  const hexFill = "#54918d";
 
   // TODO: filter hexgon by word
-  
+  const trigramHexContainer = new DataContainer(TRIGRAM_HEX);
   ////// event Listener
   // select Hex
   let selectHexId = null;
-  let hoverWord = null;
-  hoverWordWrite.subscribe(value => hoverWord = value)
+  let hoverWord = 0;
+
+  let filterHex;
+      
+  hoverWordWrite.subscribe(value => (hoverWord = value));
 
   const mouseOverHandler = e => {
     selectHexId = e.key;
   };
 
-  const mouseClickHandler = () => {
-    clickHexIdWrite.set(selectHexId);
-  };
 
+  $: {
+    if (hoverWord !== 0) {
+     const wordHex = trigramHexContainer
+        .filter(row => row.gram === hoverWord)
+        .column("hex_id");
+      console.log(wordHex);
+      filterHex = hex.filter(row => {
+        return wordHex.includes(Number(row.hex_id))
+      })
+    } 
+  }
 </script>
 
 <PolygonLayer
-  geometry={hex.column('$geometry')}
+  geometry={filterHex.column('$geometry')}
   stroke={k => (k === selectHexId ? 'red' : 'white')}
   strokeWidth={k => (k === selectHexId ? 2 : 1)}
   fill={hexFill}
   onMouseover={mouseOverHandler}
-  onMouseout={e => (selectHexId = null)}
-  onClick={mouseClickHandler} />
+  onMouseout={e => (selectHexId = null)}/>
