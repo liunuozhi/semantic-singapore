@@ -6,12 +6,11 @@
   import { TRIGRAM_HEX } from "./trigram_hex.js";
   import { TRIGRAM_COUNT } from "./trigramCount.js";
 
-  //load data
-  const dataContainer = new DataContainer(TRIGRAM_HEX);
-  const trigramCountContainer = new DataContainer(TRIGRAM_COUNT);
-  console.log(dataContainer);
+  //////load data
+  const dataContainer = new DataContainer(TRIGRAM_HEX); // hex, gram, n
+  const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count 
 
-  // set up
+  ///// set up
   const width = 500; // canvas
   const height = 500; // canvas
   // set color
