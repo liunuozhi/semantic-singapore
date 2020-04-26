@@ -5,7 +5,7 @@
   import DataContainer from "@snlab/florence-datacontainer";
   import { TRIGRAM_HEX } from "./trigram_hex.js";
   import { TRIGRAM_COUNT } from "./trigramCount.js";
-  import { hoverWordWrite } from "./store.js";
+  import { hoverWordWrite, clickWordWrite } from "./store.js";
 
   //////load data
   const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count
@@ -56,13 +56,15 @@
     e.target.style.fontSize = 20;
     e.target.style.fill = mouseOverColor;
     hoverWord = e.target.textContent;
+    hoverWordWrite.set(hoverWord);
   };
   const mouseoutHandler = e => {
     e.target.style.fontSize = fontSize;
     e.target.style.fill = labelColor;
+    hoverWordWrite.set(0);
   };
   const clickHandler = e => {
-    hoverWordWrite.set(hoverWord);
+    clickWordWrite.set(hoverWord);
   };
 </script>
 

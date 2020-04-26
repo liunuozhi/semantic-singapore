@@ -5,17 +5,15 @@
   import { Graphic, createGeoScales } from "@snlab/florence";
   import DataContainer from "@snlab/florence-datacontainer";
   import { HEX } from "./hex";
-  import { hoverWordWrite, clickHexIdWrite } from "./store.js";
+  import { hoverWordWrite, clickWordWrite, clickHexIdWrite } from "./store.js";
 
-  // subscrite data 
+  // subscrite data
   let hoverWord = null;
   let selectHexId = null;
-  hoverWordWrite.subscribe(value => {
-    hoverWord = value; // from Beeswarm
-  });
-  clickHexIdWrite.subscribe(value => {
-    selectHexId = value; // from basemap
-  });
+  let clickWord = null;
+  hoverWordWrite.subscribe(value => (hoverWord = value));
+  clickWordWrite.subscribe(value => (clickWord = value));
+  clickHexIdWrite.subscribe(value => (selectHexId = value));
 
   ////// data
   const hex = new DataContainer(HEX);
@@ -30,15 +28,25 @@
 <!-- base map -->
 <div class="basemap">
   <Graphic {width} {height} {...geoScale} padding={20} flipY>
-  <BaseMap {hex} />
-  {#if hoverWord !== 0}
-    <WordMap {hex} />
-  {/if}
+    <BaseMap {hex} />
+    {#if hoverWord !== 0}
+      <WordMap {hex} />
+    {/if}
+    {#if clickWord !== 0}
+      <WordMap {hex} />
+    {/if}
+
   </Graphic>
 </div>
-<button on:click={ ()=> hoverWord = 0 }>Reset Map</button>
-  <p>selectHex: {selectHexId}</p>
-  <p>selectWord: {hoverWord}</p>
+<button
+  on:click={() => {
+    clickWord = 0;
+  }}>
+  Reset Map
+</button>
+<p>selectHex: {selectHexId}</p>
+<p>selectWord: {hoverWord}</p>
+<p>clickWord: {clickWord}</p>
 
 <style>
 
