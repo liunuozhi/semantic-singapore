@@ -5,6 +5,7 @@
   import SvelteTooltip from "svelte-tooltip";
   import Textdemo from "./Textdemo.svelte";
   import { db } from "./firebase.js";
+  import Spinner from "svelte-spinner";
 
   let selectedHexId = null;
   clickHexIdWrite.subscribe(value => (selectedHexId = value));
@@ -32,9 +33,9 @@
   let articleText = "";
 </script>
 
-<div>
+<div class="card">
   {#await res}
-    <p>Loading ...</p>
+    <p>loading ...</p>
   {:then value}
     {#each Object.entries(value) as item}
       <button class="badge" on:click={() => (articleText = item[1].text)}>
@@ -52,16 +53,21 @@
 <style>
   .badge {
     font-size: 0.8rem;
-    padding: 0.2rem 0.7rem;
+    padding: 0.7rem 1rem;
     text-align: center;
     margin: 0.3rem;
-    background: var(--light-color);
-    color: #333;
+    background: #54918d;
+    color: white;
     border-radius: 5px;
-    font-family: 'Acme', sans-serif;
+    font-family: "Acme", sans-serif;
   }
   .badge:hover {
-    background: #53aeb6;
-    color: white;
+    opacity: 0.7;
+  }
+
+  /* Cards */
+  .card {
+    padding: 1rem;
+    margin: 1em 20% 1em;
   }
 </style>

@@ -25,6 +25,7 @@
     "firebase": "^7.14.2",
     "mapbox-gl": "^1.9.1",
     "sirv-cli": "^0.4.4",
+    "svelte-spinner": "^2.0.2",
     "svelte-tooltip": "^1.1.0"
   }
 }

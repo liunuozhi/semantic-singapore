@@ -21,7 +21,7 @@
   ////// basemap set up
   const geoScale = createGeoScales(hex.domain("$geometry"));
   const width = 700;
-  const height = 400;
+  const height = 500;
 </script>
 
 <!-- base map -->

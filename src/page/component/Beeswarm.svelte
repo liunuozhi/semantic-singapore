@@ -48,7 +48,7 @@
   const simulation = forceSimulation(circles)
     .force("collide", forceCollide(d => d.radius))
     .force("x", forceX(width / 2))
-    .force("y", forceY(height / 2))
+    .force("y", forceY(height / 2 + 15))
     .on("tick", () => (circles = circles));
 
   let hoverWord = 0;
@@ -61,6 +61,7 @@
   const mouseoutHandler = e => {
     e.target.style.fontSize = fontSize;
     e.target.style.fill = labelColor;
+    hoverWord = 0;
     hoverWordWrite.set(0);
   };
   const clickHandler = e => {
@@ -71,7 +72,15 @@
 <div id="beeswarm">
 
   <Graphic {width} {height} padding={20} {backgroundColor}>
-
+    <text
+      x={width / 2}
+      y="50px"
+      text-anchor="middle"
+      fill="white"
+      font-size="18px"
+      font-family="Acme, sans-serif">
+      {#if hoverWord !== 0}{hoverWord}{:else}Hover the word{/if}
+    </text>
     {#each circles as circle}
       <circle
         cx={circle.x}
