@@ -31,11 +31,14 @@
     </a>
   </ul>
 
-  {#if nav === 'home'}
-    <Home />
-  {:else if nav === 'about'}
-    <About />
-  {/if}
+  <div>
+    {#if nav === 'home'}
+      <Home />
+    {:else if nav === 'about'}
+      <About />
+    {/if}
+  </div>
+
 </main>
 
 <style>
@@ -45,7 +48,7 @@
     margin-bottom: 0;
     border: 0;
   }
-
+  
   /* Style the links inside the navigation bar */
   .topnav a {
     float: left;
