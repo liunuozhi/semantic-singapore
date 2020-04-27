@@ -10,3 +10,10 @@
 {#if data !== null}
    <p>{data.text}</p>
 {/if}
+
+
+<style>
+h1 {
+  font-family: 'Acme', sans-serif;
+}
+</style>

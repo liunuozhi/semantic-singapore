@@ -14,6 +14,7 @@
   hoverWordWrite.subscribe(value => (hoverWord = value));
   clickWordWrite.subscribe(value => (clickWord = value));
   clickHexIdWrite.subscribe(value => (selectHexId = value));
+  $: console.log("hoverWord:", hoverWord, "\n selectHexId", selectHexId, "\n clickWord", clickWord);
 
   ////// data
   const hex = new DataContainer(HEX);
@@ -36,16 +37,25 @@
 
   </Graphic>
 </div>
-<button
+<button class="badge"
   on:click={() => {
     clickWord = 0;
   }}>
   Reset Map
 </button>
-<p>selectHex: {selectHexId}</p>
-<p>selectWord: {hoverWord}</p>
-<p>clickWord: {clickWord}</p>
 
 <style>
-
+  .badge {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.7rem;
+    text-align: center;
+    margin: 0.3rem;
+    background: var(--light-color);
+    color: #333;
+    border-radius: 5px;
+  }
+  .badge:hover {
+    background: #53aeb6;
+    color: white;
+  }
 </style>

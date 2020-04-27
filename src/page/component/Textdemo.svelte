@@ -13,8 +13,8 @@
 </script>
 
 <div>
-  <h2>Token: {token}</h2>
-  <p>{@html renderText}</p>
+  <h2 class="title">Token: {token}</h2>
+  <p class="content">{@html renderText}</p>
 </div>
 
 <style>
@@ -23,4 +23,5 @@
     margin: 0 auto;
     margin-bottom: 50px;
   }
+
 </style>

@@ -56,6 +56,7 @@
     text-align: center;
     padding: 14px 16px;
     text-decoration: none;
+    font-family: 'Hind Siliguri', sans-serif;
     font-size: 17px;
   }
 
