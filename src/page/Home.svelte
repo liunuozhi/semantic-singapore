@@ -28,9 +28,6 @@
     padding: 0;
   }
 
-  .container {
-  }
-
   .grid-2 {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
