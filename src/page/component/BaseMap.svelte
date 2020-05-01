@@ -24,7 +24,7 @@
   stroke={k => (k === selectHexId ? 'red' : 'white')}
   strokeWidth={k => (k === selectHexId ? 2 : 1)}
   fill="url(#pattern-stripe)"
-  fillOpacity="0.4"
+  fillOpacity="0.2"
   onMouseover={mouseOverHandler}
   onMouseout={e => (selectHexId = null)}
   onClick={mouseClickHandler} />

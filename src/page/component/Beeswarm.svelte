@@ -14,13 +14,13 @@
   const width = 500; // canvas
   const height = 500; // canvas
   // set color
-  const backgroundColor = "#b2ded3";
+  // const backgroundColor = "#b2ded3";
   const axisColor = "#54918d";
   const labelColor = "white";
-  const circleColor = axisColor;
+  const circleColor = "white";
   const mouseOverColor = "#FF4D4D";
   // set other aes property
-  const opacityCircle = 0.7;
+  const opacityCircle = 0.3;
   const opacityText = 0.8; // label of circle
   const fontSize = 12; // label of circle & Axis
 
@@ -71,7 +71,7 @@
 
 <div id="beeswarm">
 
-  <Graphic {width} {height} padding={20} {backgroundColor}>
+  <Graphic {width} {height} padding={20} >
     <text
       x={width / 2}
       y="50px"

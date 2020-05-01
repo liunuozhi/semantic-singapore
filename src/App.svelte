@@ -48,9 +48,9 @@
   }
 
   main {
-    background-color: #9ac5c5;
     height: 100%;
     width: 100%;
+    background-color: #9ac5c5;
   }
 
   .topnav {

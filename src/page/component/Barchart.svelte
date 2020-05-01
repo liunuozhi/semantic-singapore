@@ -19,7 +19,7 @@
 
 <div class="bar">
   <Graphic {width} {height} {scaleX} {scaleY} padding={30} flipY>
-
+    <!-- define fill pattern -->
     <defs>
       <pattern
         id="pattern-stripe"
@@ -30,14 +30,16 @@
         <rect width="2" height="4" transform="translate(0,0)" fill="white" />
       </pattern>
     </defs>
-
+    <!-- create title -->
+    <text x=30 y=30 fill="white" font-family="acme" font-size="14pt">Topic Distribution</text>
+    <!-- create bar -->
     {#each data as item, index}
       <Rectangle
         x1={item.topic - 0.4}
         y1={0}
         x2={item.topic + 0.4}
         y2={item.n}
-        stroke={selectChartKey !== index ? 'white' : 'red'}
+        stroke={(selectChartKey !== index) ? 'white' : 'red'}
         strokeWidth="2px"
         fill="url(#pattern-stripe)"
         fillOpacity="0.5"
@@ -48,6 +50,7 @@
         }}
         onMouseout={e => {
           hoverTopic = 0;
+          hoverTopicWrite.set(hoverTopic);
           selectChartKey = null;
         }}
         onClick={e => {
@@ -65,5 +68,6 @@
     border-radius: 25px;
     margin-top: 40px;
     padding: 20px;
+    background-color: #01839480;
   }
 </style>

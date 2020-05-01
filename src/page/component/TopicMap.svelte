@@ -5,7 +5,11 @@
   import { TOPIC_HEX } from "./topic_hex.js";
   import { scaleOrdinal } from "d3-scale";
   import { schemeAccent } from "d3-scale-chromatic";
-  import { clickHexIdWrite } from "./store.js"
+  import {
+    clickHexIdWrite,
+    hoverTopicWrite,
+    clickTopicWrite
+  } from "./store.js";
 
   // load data
   const topicHex = new DataContainer(TOPIC_HEX);
@@ -15,29 +19,52 @@
     .domain(topicHex.domain("topic"))
     .range(schemeAccent);
 
+  // event listener
   let hoverTopic = 0;
-  let selectHex;
+  hoverTopicWrite.subscribe(value => (hoverTopic = value));
+  let filterTopicHex;
 
-  const mouseOverHandler = e => {
-    selectHex = e.key
-    hoverTopic = topicHex.column("topic")[selectHex];
-  };
+  // clickTopic from barchart
+  let clickTopic = 0;
+  clickTopicWrite.subscribe(value => (clickTopic = value));
 
-  const onClickHandler = e => {
-    selectHex = e.key
-    const clickHexId = topicHex.column("hex_id")[selectHex];
-    clickHexIdWrite.set(clickHexId) // store
+  $: {
+    if (hoverTopic !== 0) {
+      filterTopicHex = topicHex.filter(
+        row => row.topic === "topic".concat(String(hoverTopic))
+      );
+    } 
+    if (clickTopic !== 0) {
+      filterTopicHex = topicHex.filter(
+        row => row.topic === "topic".concat(String(clickTopic))
+      );
+    } else {
+      filterTopicHex = topicHex;
+    }
   }
+
+  let selectHex = 0;
+  let selectHexKey;
+  let clickHexId = 0;
 </script>
 
 <PolygonLayer
-  geometry={topicHex.column('$geometry')}
-  fill={topicHex.map('topic', myColorScale)}
-  stroke={k => (k === selectHex ? 'red' : 'white')}
-  strokeWidth={k => (k === selectHex ? 2 : 1)}
-  onMouseover={mouseOverHandler}
-  onMouseout={e => {hoverTopic = 0; selectHex = null}} 
-  onClick={onClickHandler}/>
+  geometry={filterTopicHex.column('$geometry')}
+  fill={filterTopicHex.map('topic', myColorScale)}
+  stroke={k => (k === selectHexKey ? 'red' : 'white')}
+  strokeWidth={k => (k === selectHexKey ? 2 : 1)}
+  onMouseover={e => {
+    selectHexKey = e.key
+    selectHex = filterTopicHex.column('hex_id')[e.key];
+  }}
+  onMouseout={e => {
+    selectHexKey = null;
+    selectHex = 0;
+  }}
+  onClick={e => {
+    clickHexId = topicHex.column('hex_id')[e.key];
+    clickHexIdWrite.set(clickHexId);
+  }} />
 
 <text
   x="650px"
@@ -46,5 +73,5 @@
   fill="black"
   font-size="18px"
   font-family="Acme, sans-serif">
-  {#if hoverTopic !== 0}{hoverTopic}{/if}
+  {#if clickHexId !== 0}{clickHexId}{/if}
 </text>

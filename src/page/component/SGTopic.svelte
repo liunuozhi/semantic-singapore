@@ -3,9 +3,11 @@
   import BaseMap from "./BaseMap.svelte";
   import TopicMap from "./TopicMap.svelte";
   import Barchart from "./Barchart.svelte";
+  import Beeswarm from "./Beeswarm.svelte"
   import { Graphic, createGeoScales } from "@snlab/florence";
   import DataContainer from "@snlab/florence-datacontainer";
   import { HEX } from "./hex";
+  import { clickTopicWrite } from "./store.js";
 
   ////// data
   const hex = new DataContainer(HEX);
@@ -23,10 +25,21 @@
       <BaseMap {hex} />
       <TopicMap />
     </Graphic>
+    <button
+      on:click={e => {
+        clickTopicWrite.set(0);
+      }}>
+      Reset Map
+    </button>
   </div>
 
+  <div class="analysis">
   <div class="bar">
     <Barchart />
+  </div>
+  <div class="beeswarm">
+    <Beeswarm />
+  </div>
   </div>
 </div>
 
@@ -44,5 +57,14 @@
     border-radius: 25px;
     padding: 40px;
     margin-top: 40px;
+    background-color: #01839480;
+  }
+
+  .beeswarm {
+    border: 2px solid white;
+    border-radius: 25px;
+    margin-top: 40px;
+    padding: 20px;
+    background-color: #01839480;
   }
 </style>
