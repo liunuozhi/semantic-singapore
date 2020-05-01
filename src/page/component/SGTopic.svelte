@@ -2,7 +2,6 @@
   "use strict";
   import BaseMap from "./BaseMap.svelte";
   import TopicMap from "./TopicMap.svelte";
-  import Barchart from "./Barchart.svelte"
   import { Graphic, createGeoScales } from "@snlab/florence";
   import DataContainer from "@snlab/florence-datacontainer";
   import { HEX } from "./hex";
@@ -21,10 +20,6 @@
     <BaseMap {hex} />
     <TopicMap />
   </Graphic>
-</div>
-
-<div class="barchart">
-  <Barchart />
 </div>
 
 <style>

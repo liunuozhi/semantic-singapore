@@ -5,7 +5,7 @@
 
   ////// set up
   export let hex;
-  const hexFill = "#b2ded3";
+  const hexFill = "#fff";
   
   ////// event Listener
   // select Hex

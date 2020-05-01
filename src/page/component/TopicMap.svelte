@@ -6,9 +6,6 @@
   import { scaleOrdinal } from "d3-scale";
   import { schemeAccent } from "d3-scale-chromatic";
 
-  ////// set up
-  const hexFill = "black";
-
   // load data
   const topicHex = new DataContainer(TOPIC_HEX);
 
