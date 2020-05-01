@@ -5,6 +5,7 @@
   import { TOPIC_HEX } from "./topic_hex.js";
   import { scaleOrdinal } from "d3-scale";
   import { schemeAccent } from "d3-scale-chromatic";
+  import { clickHexIdWrite } from "./store.js"
 
   // load data
   const topicHex = new DataContainer(TOPIC_HEX);
@@ -15,21 +16,28 @@
     .range(schemeAccent);
 
   let hoverTopic = 0;
-  let selectHexId;
+  let selectHex;
 
   const mouseOverHandler = e => {
-    selectHexId = e.key
-    hoverTopic = topicHex.column("topic")[selectHexId];
+    selectHex = e.key
+    hoverTopic = topicHex.column("topic")[selectHex];
   };
+
+  const onClickHandler = e => {
+    selectHex = e.key
+    const clickHexId = topicHex.column("hex_id")[selectHex];
+    clickHexIdWrite.set(clickHexId) // store
+  }
 </script>
 
 <PolygonLayer
   geometry={topicHex.column('$geometry')}
   fill={topicHex.map('topic', myColorScale)}
-  stroke={k => (k === selectHexId ? 'red' : 'white')}
-  strokeWidth={k => (k === selectHexId ? 2 : 1)}
+  stroke={k => (k === selectHex ? 'red' : 'white')}
+  strokeWidth={k => (k === selectHex ? 2 : 1)}
   onMouseover={mouseOverHandler}
-  onMouseout={e => {hoverTopic = 0; selectHexId = null}} />
+  onMouseout={e => {hoverTopic = 0; selectHex = null}} 
+  onClick={onClickHandler}/>
 
 <text
   x="650px"

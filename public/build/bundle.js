@@ -123,6 +123,12 @@ var app = (function () {
     function detach(node) {
         node.parentNode.removeChild(node);
     }
+    function destroy_each(iterations, detaching) {
+        for (let i = 0; i < iterations.length; i += 1) {
+            if (iterations[i])
+                iterations[i].d(detaching);
+        }
+    }
     function element(name) {
         return document.createElement(name);
     }
@@ -677,7 +683,9 @@ var app = (function () {
         return { set, update, subscribe };
     }
 
+    const hoverTopicWrite = writable(0);
     const clickHexIdWrite = writable(0);
+    const clickTopicWrite = writable(0);
 
     class GraphicContext {
       constructor ({ renderer }) {
@@ -7495,6 +7503,22 @@ return d[d.length-1];};return ", funcName].join("");
       return isLineStringOrMultiLineString(from) && isLineStringOrMultiLineString(to)
     }
 
+    function transitionGeometry (fromGeometry, toGeometry) {
+      if (pointTransition(fromGeometry, toGeometry)) {
+        return interpolate(fromGeometry, toGeometry)
+      }
+
+      if (polygonTransition(fromGeometry, toGeometry)) {
+        return transshape(fromGeometry, toGeometry)
+      }
+
+      if (lineStringTransition(fromGeometry, toGeometry)) {
+        return transshape(fromGeometry, toGeometry)
+      }
+
+      throw new Error('Invalid input')
+    }
+
     function transitionGeometries (fromLayer, toLayer) {
       const firstFromGeometry = getFirstGeometry(fromLayer);
       const firstToGeometry = getFirstGeometry(toLayer);
@@ -12973,10 +12997,61 @@ return d[d.length-1];};return ", funcName].join("");
       return !closed
     }
 
+    const markRepresentAsPolygonFuncs = {
+      Point: representPointAsPolygon,
+      Line: representLineAsPolygon
+    };
+
     const layerRepresentAsPolygonFuncs = {
       Point: representPointsAsPolygons,
       Line: representLinesAsPolygons
     };
+
+    function createDataNecessaryForIndexingMark (type, markId, geometryTypes, aesthetics) {
+      const markData = { markId };
+      let attributes;
+
+      if (type === 'Point') {
+        attributes = {
+          pixelGeometry: geometryTypes.pixelGeometry,
+          radius: aesthetics.radius
+        };
+      }
+
+      if (type === 'Label') {
+        attributes = {
+          pixelGeometry: geometryTypes.pixelGeometry,
+          radius: aesthetics.fontSize
+        };
+      }
+
+      if (type === 'Rectangle') {
+        attributes = { screenGeometry: geometryTypes.screenGeometry };
+      }
+
+      if (type === 'Polygon') {
+        attributes = { screenGeometry: geometryTypes.screenGeometry };
+      }
+
+      if (type === 'Line') {
+        attributes = {
+          pixelGeometry: geometryTypes.pixelGeometry,
+          strokeWidth: aesthetics.strokeWidth
+        };
+      }
+
+      if (type === 'Symbol') {
+        attributes = { screenGeometry: geometryTypes.screenGeometry };
+      }
+
+      if (type === 'Area') {
+        attributes = { screenGeometry: geometryTypes.screenGeometry };
+      }
+
+      markData.attributes = attributes;
+
+      return markData
+    }
 
     function createDataNecessaryForIndexingLayer (
       type, layerId, keyArray, geometryObjects, aestheticsObjects
@@ -13122,6 +13197,55 @@ return d[d.length-1];};return ", funcName].join("");
         };
     }
 
+    /**
+     * Returns either a Svelte store, or a Svelte 'tweened' store,
+     * depending on whether the user specified transition options.
+     * The way the tweened store is set up depends on the type of aesthetic,
+     * and which options the user has chosen.
+     *
+     * @param {String} aestheticName The name of the aesthetic a store is created for.
+     * @param {*} aestheticValue The initial value of the store.
+     * @param {Number|Object} transitionOptions A number indicating the transtion duration, or an Object
+     * with aesthetic names as keys, and Numbers OR Objects as values.
+     * @returns {writable|tweened}
+     */
+    function createTransitionable (aestheticName, aestheticValue, transitionOptions) {
+      if (isUndefined(transitionOptions) || isUndefined(aestheticValue)) {
+        return writable(aestheticValue)
+      }
+
+      if (transitionOptions.constructor === Number) {
+        const options = createOptionsFromDuration(aestheticName, transitionOptions);
+        return tweened(aestheticValue, options)
+      }
+
+      if (transitionOptions.constructor === Object) {
+        if (!(aestheticName in transitionOptions)) return writable(aestheticValue)
+
+        const aestheticTransition = transitionOptions[aestheticName];
+
+        if (aestheticTransition && aestheticTransition.constructor === Number) {
+          const options = createOptionsFromDuration(aestheticName, aestheticTransition);
+          return tweened(aestheticValue, options)
+        }
+
+        if (aestheticTransition && aestheticTransition.constructor === Object) {
+          const options = createOptionsFromOptions(aestheticName, aestheticTransition);
+          return tweened(aestheticValue, options)
+        }
+      }
+
+      throw new Error(`Invalid transition for ${aestheticName}`)
+    }
+
+    function createOptionsFromDuration (aestheticName, duration) {
+      if (aestheticName === 'geometry') {
+        return { duration, easing: cubicOut, interpolate: transitionGeometry }
+      } else {
+        return { duration, easing: cubicOut, interpolate }
+      }
+    }
+
     function transitionsEqual (a, b) {
       if (a === undefined || b === undefined) return a === b
 
@@ -13161,6 +13285,28 @@ return d[d.length-1];};return ", funcName].join("");
       return Object.keys(obj).length
     }
 
+    function createOptionsFromOptions (aestheticName, transitionOptions) {
+      if (aestheticName === 'geometry') {
+        const defaultOptions = {
+          delay: 0,
+          duration: 400,
+          easing: cubicOut,
+          interpolate: transitionGeometry
+        };
+
+        return Object.assign(defaultOptions, transitionOptions)
+      } else {
+        const defaultOptions = {
+          delay: 0,
+          duration: 400,
+          easing: cubicOut,
+          interpolate
+        };
+
+        return Object.assign(defaultOptions, transitionOptions)
+      }
+    }
+
     /**
      * Like createTransitionable, returns either a Svelte store, or a Svelte 'tweened' store,
      * depending on whether the user specified transition options.
@@ -13178,7 +13324,7 @@ return d[d.length-1];};return ", funcName].join("");
       }
 
       if (transitionOptions.constructor === Number) {
-        const options = createOptionsFromDuration(aestheticName, transitionOptions);
+        const options = createOptionsFromDuration$1(aestheticName, transitionOptions);
         return tweened(aestheticValue, options)
       }
 
@@ -13188,12 +13334,12 @@ return d[d.length-1];};return ", funcName].join("");
         const aestheticTransition = transitionOptions[aestheticName];
 
         if (aestheticTransition && aestheticTransition.constructor === Number) {
-          const options = createOptionsFromDuration(aestheticName, aestheticTransition);
+          const options = createOptionsFromDuration$1(aestheticName, aestheticTransition);
           return tweened(aestheticValue, options)
         }
 
         if (aestheticTransition && aestheticTransition.constructor === Object) {
-          const options = createOptionsFromOptions(aestheticName, aestheticTransition);
+          const options = createOptionsFromOptions$1(aestheticName, aestheticTransition);
           return tweened(aestheticValue, options)
         }
       }
@@ -13201,7 +13347,7 @@ return d[d.length-1];};return ", funcName].join("");
       throw new Error(`Invalid transition for ${aestheticName}`)
     }
 
-    function createOptionsFromDuration (aestheticName, duration) {
+    function createOptionsFromDuration$1 (aestheticName, duration) {
       if (aestheticName === 'geometry') {
         return { duration, easing: cubicOut, interpolate: transitionGeometries }
       } else {
@@ -13209,7 +13355,7 @@ return d[d.length-1];};return ", funcName].join("");
       }
     }
 
-    function createOptionsFromOptions (aestheticName, transitionOptions) {
+    function createOptionsFromOptions$1 (aestheticName, transitionOptions) {
       if (aestheticName === 'geometry') {
         return Object.assign({ interpolate: transitionGeometries }, transitionOptions)
       } else {
@@ -13284,6 +13430,3455 @@ return d[d.length-1];};return ", funcName].join("");
       }
     }
 
+    /* node_modules/@snlab/florence/src/components/Marks/Mark/Mark.svelte generated by Svelte v3.21.0 */
+    const file$1 = "node_modules/@snlab/florence/src/components/Marks/Mark/Mark.svelte";
+
+    // (417:0) {#if $graphicContext.output() === 'svg'}
+    function create_if_block$1(ctx) {
+    	let t0;
+    	let t1;
+    	let t2;
+    	let if_block3_anchor;
+    	let if_block0 = /*renderPolygon*/ ctx[26] && create_if_block_4(ctx);
+    	let if_block1 = /*renderCircle*/ ctx[27] && create_if_block_3(ctx);
+    	let if_block2 = /*renderLine*/ ctx[28] && create_if_block_2(ctx);
+    	let if_block3 = /*renderLabel*/ ctx[29] && create_if_block_1$1(ctx);
+
+    	const block = {
+    		c: function create() {
+    			if (if_block0) if_block0.c();
+    			t0 = space();
+    			if (if_block1) if_block1.c();
+    			t1 = space();
+    			if (if_block2) if_block2.c();
+    			t2 = space();
+    			if (if_block3) if_block3.c();
+    			if_block3_anchor = empty();
+    		},
+    		m: function mount(target, anchor) {
+    			if (if_block0) if_block0.m(target, anchor);
+    			insert_dev(target, t0, anchor);
+    			if (if_block1) if_block1.m(target, anchor);
+    			insert_dev(target, t1, anchor);
+    			if (if_block2) if_block2.m(target, anchor);
+    			insert_dev(target, t2, anchor);
+    			if (if_block3) if_block3.m(target, anchor);
+    			insert_dev(target, if_block3_anchor, anchor);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (/*renderPolygon*/ ctx[26]) {
+    				if (if_block0) {
+    					if_block0.p(ctx, dirty);
+    				} else {
+    					if_block0 = create_if_block_4(ctx);
+    					if_block0.c();
+    					if_block0.m(t0.parentNode, t0);
+    				}
+    			} else if (if_block0) {
+    				if_block0.d(1);
+    				if_block0 = null;
+    			}
+
+    			if (/*renderCircle*/ ctx[27]) {
+    				if (if_block1) {
+    					if_block1.p(ctx, dirty);
+    				} else {
+    					if_block1 = create_if_block_3(ctx);
+    					if_block1.c();
+    					if_block1.m(t1.parentNode, t1);
+    				}
+    			} else if (if_block1) {
+    				if_block1.d(1);
+    				if_block1 = null;
+    			}
+
+    			if (/*renderLine*/ ctx[28]) {
+    				if (if_block2) {
+    					if_block2.p(ctx, dirty);
+    				} else {
+    					if_block2 = create_if_block_2(ctx);
+    					if_block2.c();
+    					if_block2.m(t2.parentNode, t2);
+    				}
+    			} else if (if_block2) {
+    				if_block2.d(1);
+    				if_block2 = null;
+    			}
+
+    			if (/*renderLabel*/ ctx[29]) {
+    				if (if_block3) {
+    					if_block3.p(ctx, dirty);
+    				} else {
+    					if_block3 = create_if_block_1$1(ctx);
+    					if_block3.c();
+    					if_block3.m(if_block3_anchor.parentNode, if_block3_anchor);
+    				}
+    			} else if (if_block3) {
+    				if_block3.d(1);
+    				if_block3 = null;
+    			}
+    		},
+    		d: function destroy(detaching) {
+    			if (if_block0) if_block0.d(detaching);
+    			if (detaching) detach_dev(t0);
+    			if (if_block1) if_block1.d(detaching);
+    			if (detaching) detach_dev(t1);
+    			if (if_block2) if_block2.d(detaching);
+    			if (detaching) detach_dev(t2);
+    			if (if_block3) if_block3.d(detaching);
+    			if (detaching) detach_dev(if_block3_anchor);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block$1.name,
+    		type: "if",
+    		source: "(417:0) {#if $graphicContext.output() === 'svg'}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (419:2) {#if renderPolygon}
+    function create_if_block_4(ctx) {
+    	let path;
+    	let path_class_value;
+    	let path_d_value;
+
+    	const block = {
+    		c: function create() {
+    			path = svg_element("path");
+    			attr_dev(path, "class", path_class_value = /*type*/ ctx[0].toLowerCase());
+    			attr_dev(path, "d", path_d_value = generatePath(/*$tr_screenGeometry*/ ctx[16]));
+    			attr_dev(path, "fill", /*$tr_fill*/ ctx[18]);
+    			attr_dev(path, "stroke", /*$tr_stroke*/ ctx[19]);
+    			attr_dev(path, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			attr_dev(path, "fill-opacity", /*$tr_fillOpacity*/ ctx[21]);
+    			attr_dev(path, "stroke-opacity", /*$tr_strokeOpacity*/ ctx[22]);
+    			attr_dev(path, "opacity", /*$tr_opacity*/ ctx[23]);
+    			add_location(path, file$1, 420, 4, 13416);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, path, anchor);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty[0] & /*type*/ 1 && path_class_value !== (path_class_value = /*type*/ ctx[0].toLowerCase())) {
+    				attr_dev(path, "class", path_class_value);
+    			}
+
+    			if (dirty[0] & /*$tr_screenGeometry*/ 65536 && path_d_value !== (path_d_value = generatePath(/*$tr_screenGeometry*/ ctx[16]))) {
+    				attr_dev(path, "d", path_d_value);
+    			}
+
+    			if (dirty[0] & /*$tr_fill*/ 262144) {
+    				attr_dev(path, "fill", /*$tr_fill*/ ctx[18]);
+    			}
+
+    			if (dirty[0] & /*$tr_stroke*/ 524288) {
+    				attr_dev(path, "stroke", /*$tr_stroke*/ ctx[19]);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeWidth*/ 1048576) {
+    				attr_dev(path, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			}
+
+    			if (dirty[0] & /*$tr_fillOpacity*/ 2097152) {
+    				attr_dev(path, "fill-opacity", /*$tr_fillOpacity*/ ctx[21]);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeOpacity*/ 4194304) {
+    				attr_dev(path, "stroke-opacity", /*$tr_strokeOpacity*/ ctx[22]);
+    			}
+
+    			if (dirty[0] & /*$tr_opacity*/ 8388608) {
+    				attr_dev(path, "opacity", /*$tr_opacity*/ ctx[23]);
+    			}
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(path);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_4.name,
+    		type: "if",
+    		source: "(419:2) {#if renderPolygon}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (434:2) {#if renderCircle}
+    function create_if_block_3(ctx) {
+    	let circle;
+    	let circle_cx_value;
+    	let circle_cy_value;
+
+    	const block = {
+    		c: function create() {
+    			circle = svg_element("circle");
+    			attr_dev(circle, "class", "point");
+    			attr_dev(circle, "cx", circle_cx_value = /*$tr_screenGeometry*/ ctx[16].coordinates[0]);
+    			attr_dev(circle, "cy", circle_cy_value = /*$tr_screenGeometry*/ ctx[16].coordinates[1]);
+    			attr_dev(circle, "r", /*$tr_radius*/ ctx[17]);
+    			attr_dev(circle, "fill", /*$tr_fill*/ ctx[18]);
+    			attr_dev(circle, "stroke", /*$tr_stroke*/ ctx[19]);
+    			attr_dev(circle, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			attr_dev(circle, "fill-opacity", /*$tr_fillOpacity*/ ctx[21]);
+    			attr_dev(circle, "stroke-opacity", /*$tr_strokeOpacity*/ ctx[22]);
+    			attr_dev(circle, "opacity", /*$tr_opacity*/ ctx[23]);
+    			add_location(circle, file$1, 435, 4, 13732);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, circle, anchor);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty[0] & /*$tr_screenGeometry*/ 65536 && circle_cx_value !== (circle_cx_value = /*$tr_screenGeometry*/ ctx[16].coordinates[0])) {
+    				attr_dev(circle, "cx", circle_cx_value);
+    			}
+
+    			if (dirty[0] & /*$tr_screenGeometry*/ 65536 && circle_cy_value !== (circle_cy_value = /*$tr_screenGeometry*/ ctx[16].coordinates[1])) {
+    				attr_dev(circle, "cy", circle_cy_value);
+    			}
+
+    			if (dirty[0] & /*$tr_radius*/ 131072) {
+    				attr_dev(circle, "r", /*$tr_radius*/ ctx[17]);
+    			}
+
+    			if (dirty[0] & /*$tr_fill*/ 262144) {
+    				attr_dev(circle, "fill", /*$tr_fill*/ ctx[18]);
+    			}
+
+    			if (dirty[0] & /*$tr_stroke*/ 524288) {
+    				attr_dev(circle, "stroke", /*$tr_stroke*/ ctx[19]);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeWidth*/ 1048576) {
+    				attr_dev(circle, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			}
+
+    			if (dirty[0] & /*$tr_fillOpacity*/ 2097152) {
+    				attr_dev(circle, "fill-opacity", /*$tr_fillOpacity*/ ctx[21]);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeOpacity*/ 4194304) {
+    				attr_dev(circle, "stroke-opacity", /*$tr_strokeOpacity*/ ctx[22]);
+    			}
+
+    			if (dirty[0] & /*$tr_opacity*/ 8388608) {
+    				attr_dev(circle, "opacity", /*$tr_opacity*/ ctx[23]);
+    			}
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(circle);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_3.name,
+    		type: "if",
+    		source: "(434:2) {#if renderCircle}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (451:2) {#if renderLine}
+    function create_if_block_2(ctx) {
+    	let path;
+    	let path_d_value;
+
+    	const block = {
+    		c: function create() {
+    			path = svg_element("path");
+    			attr_dev(path, "class", "line");
+    			attr_dev(path, "d", path_d_value = generatePath(/*$tr_screenGeometry*/ ctx[16]));
+    			attr_dev(path, "fill", "none");
+    			attr_dev(path, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			attr_dev(path, "stroke", /*$tr_stroke*/ ctx[19]);
+    			attr_dev(path, "opacity", /*$tr_opacity*/ ctx[23]);
+    			add_location(path, file$1, 452, 4, 14104);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, path, anchor);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty[0] & /*$tr_screenGeometry*/ 65536 && path_d_value !== (path_d_value = generatePath(/*$tr_screenGeometry*/ ctx[16]))) {
+    				attr_dev(path, "d", path_d_value);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeWidth*/ 1048576) {
+    				attr_dev(path, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			}
+
+    			if (dirty[0] & /*$tr_stroke*/ 524288) {
+    				attr_dev(path, "stroke", /*$tr_stroke*/ ctx[19]);
+    			}
+
+    			if (dirty[0] & /*$tr_opacity*/ 8388608) {
+    				attr_dev(path, "opacity", /*$tr_opacity*/ ctx[23]);
+    			}
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(path);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_2.name,
+    		type: "if",
+    		source: "(451:2) {#if renderLine}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (464:2) {#if renderLabel}
+    function create_if_block_1$1(ctx) {
+    	let text_1;
+    	let t_value = /*aesthetics*/ ctx[2].text + "";
+    	let t;
+    	let text_1_x_value;
+    	let text_1_y_value;
+    	let text_1_font_size_value;
+    	let text_1_text_anchor_value;
+    	let text_1_dominant_baseline_value;
+
+    	const block = {
+    		c: function create() {
+    			text_1 = svg_element("text");
+    			t = text(t_value);
+    			attr_dev(text_1, "class", "label");
+    			attr_dev(text_1, "x", text_1_x_value = /*$tr_screenGeometry*/ ctx[16].coordinates[0]);
+    			attr_dev(text_1, "y", text_1_y_value = /*$tr_screenGeometry*/ ctx[16].coordinates[1]);
+    			attr_dev(text_1, "fill", /*$tr_fill*/ ctx[18]);
+    			attr_dev(text_1, "stroke", /*$tr_stroke*/ ctx[19]);
+    			attr_dev(text_1, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			attr_dev(text_1, "fill-opacity", /*$tr_fillOpacity*/ ctx[21]);
+    			attr_dev(text_1, "stroke-opacity", /*$tr_strokeOpacity*/ ctx[22]);
+    			attr_dev(text_1, "opacity", /*$tr_opacity*/ ctx[23]);
+    			attr_dev(text_1, "transform", /*rotateTransform*/ ctx[14]);
+    			attr_dev(text_1, "font-family", /*fontFamily*/ ctx[1]);
+    			attr_dev(text_1, "font-size", text_1_font_size_value = /*$tr_fontSize*/ ctx[24] + "px");
+    			attr_dev(text_1, "font-weight", /*$tr_fontWeight*/ ctx[25]);
+    			attr_dev(text_1, "text-anchor", text_1_text_anchor_value = /*parsedTextAnchorPoint*/ ctx[15].textAnchor);
+    			attr_dev(text_1, "dominant-baseline", text_1_dominant_baseline_value = /*parsedTextAnchorPoint*/ ctx[15].dominantBaseline);
+    			add_location(text_1, file$1, 465, 4, 14325);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, text_1, anchor);
+    			append_dev(text_1, t);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty[0] & /*aesthetics*/ 4 && t_value !== (t_value = /*aesthetics*/ ctx[2].text + "")) set_data_dev(t, t_value);
+
+    			if (dirty[0] & /*$tr_screenGeometry*/ 65536 && text_1_x_value !== (text_1_x_value = /*$tr_screenGeometry*/ ctx[16].coordinates[0])) {
+    				attr_dev(text_1, "x", text_1_x_value);
+    			}
+
+    			if (dirty[0] & /*$tr_screenGeometry*/ 65536 && text_1_y_value !== (text_1_y_value = /*$tr_screenGeometry*/ ctx[16].coordinates[1])) {
+    				attr_dev(text_1, "y", text_1_y_value);
+    			}
+
+    			if (dirty[0] & /*$tr_fill*/ 262144) {
+    				attr_dev(text_1, "fill", /*$tr_fill*/ ctx[18]);
+    			}
+
+    			if (dirty[0] & /*$tr_stroke*/ 524288) {
+    				attr_dev(text_1, "stroke", /*$tr_stroke*/ ctx[19]);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeWidth*/ 1048576) {
+    				attr_dev(text_1, "stroke-width", /*$tr_strokeWidth*/ ctx[20]);
+    			}
+
+    			if (dirty[0] & /*$tr_fillOpacity*/ 2097152) {
+    				attr_dev(text_1, "fill-opacity", /*$tr_fillOpacity*/ ctx[21]);
+    			}
+
+    			if (dirty[0] & /*$tr_strokeOpacity*/ 4194304) {
+    				attr_dev(text_1, "stroke-opacity", /*$tr_strokeOpacity*/ ctx[22]);
+    			}
+
+    			if (dirty[0] & /*$tr_opacity*/ 8388608) {
+    				attr_dev(text_1, "opacity", /*$tr_opacity*/ ctx[23]);
+    			}
+
+    			if (dirty[0] & /*rotateTransform*/ 16384) {
+    				attr_dev(text_1, "transform", /*rotateTransform*/ ctx[14]);
+    			}
+
+    			if (dirty[0] & /*fontFamily*/ 2) {
+    				attr_dev(text_1, "font-family", /*fontFamily*/ ctx[1]);
+    			}
+
+    			if (dirty[0] & /*$tr_fontSize*/ 16777216 && text_1_font_size_value !== (text_1_font_size_value = /*$tr_fontSize*/ ctx[24] + "px")) {
+    				attr_dev(text_1, "font-size", text_1_font_size_value);
+    			}
+
+    			if (dirty[0] & /*$tr_fontWeight*/ 33554432) {
+    				attr_dev(text_1, "font-weight", /*$tr_fontWeight*/ ctx[25]);
+    			}
+
+    			if (dirty[0] & /*parsedTextAnchorPoint*/ 32768 && text_1_text_anchor_value !== (text_1_text_anchor_value = /*parsedTextAnchorPoint*/ ctx[15].textAnchor)) {
+    				attr_dev(text_1, "text-anchor", text_1_text_anchor_value);
+    			}
+
+    			if (dirty[0] & /*parsedTextAnchorPoint*/ 32768 && text_1_dominant_baseline_value !== (text_1_dominant_baseline_value = /*parsedTextAnchorPoint*/ ctx[15].dominantBaseline)) {
+    				attr_dev(text_1, "dominant-baseline", text_1_dominant_baseline_value);
+    			}
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(text_1);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_1$1.name,
+    		type: "if",
+    		source: "(464:2) {#if renderLabel}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function create_fragment$1(ctx) {
+    	let show_if = /*$graphicContext*/ ctx[30].output() === "svg";
+    	let if_block_anchor;
+    	let if_block = show_if && create_if_block$1(ctx);
+
+    	const block = {
+    		c: function create() {
+    			if (if_block) if_block.c();
+    			if_block_anchor = empty();
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			if (if_block) if_block.m(target, anchor);
+    			insert_dev(target, if_block_anchor, anchor);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty[0] & /*$graphicContext*/ 1073741824) show_if = /*$graphicContext*/ ctx[30].output() === "svg";
+
+    			if (show_if) {
+    				if (if_block) {
+    					if_block.p(ctx, dirty);
+    				} else {
+    					if_block = create_if_block$1(ctx);
+    					if_block.c();
+    					if_block.m(if_block_anchor.parentNode, if_block_anchor);
+    				}
+    			} else if (if_block) {
+    				if_block.d(1);
+    				if_block = null;
+    			}
+    		},
+    		i: noop,
+    		o: noop,
+    		d: function destroy(detaching) {
+    			if (if_block) if_block.d(detaching);
+    			if (detaching) detach_dev(if_block_anchor);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$1.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    let idCounter$1 = 0;
+
+    function getId$1() {
+    	return "mark" + idCounter$1++;
+    }
+
+    function instance$1($$self, $$props, $$invalidate) {
+    	let $sectionContext;
+
+    	let $tr_rotation,
+    		$$unsubscribe_tr_rotation = noop,
+    		$$subscribe_tr_rotation = () => ($$unsubscribe_tr_rotation(), $$unsubscribe_tr_rotation = subscribe(tr_rotation, $$value => $$invalidate(84, $tr_rotation = $$value)), tr_rotation);
+
+    	let $tr_screenGeometry,
+    		$$unsubscribe_tr_screenGeometry = noop,
+    		$$subscribe_tr_screenGeometry = () => ($$unsubscribe_tr_screenGeometry(), $$unsubscribe_tr_screenGeometry = subscribe(tr_screenGeometry, $$value => $$invalidate(16, $tr_screenGeometry = $$value)), tr_screenGeometry);
+
+    	let $tr_radius,
+    		$$unsubscribe_tr_radius = noop,
+    		$$subscribe_tr_radius = () => ($$unsubscribe_tr_radius(), $$unsubscribe_tr_radius = subscribe(tr_radius, $$value => $$invalidate(17, $tr_radius = $$value)), tr_radius);
+
+    	let $tr_fill,
+    		$$unsubscribe_tr_fill = noop,
+    		$$subscribe_tr_fill = () => ($$unsubscribe_tr_fill(), $$unsubscribe_tr_fill = subscribe(tr_fill, $$value => $$invalidate(18, $tr_fill = $$value)), tr_fill);
+
+    	let $tr_stroke,
+    		$$unsubscribe_tr_stroke = noop,
+    		$$subscribe_tr_stroke = () => ($$unsubscribe_tr_stroke(), $$unsubscribe_tr_stroke = subscribe(tr_stroke, $$value => $$invalidate(19, $tr_stroke = $$value)), tr_stroke);
+
+    	let $tr_strokeWidth,
+    		$$unsubscribe_tr_strokeWidth = noop,
+    		$$subscribe_tr_strokeWidth = () => ($$unsubscribe_tr_strokeWidth(), $$unsubscribe_tr_strokeWidth = subscribe(tr_strokeWidth, $$value => $$invalidate(20, $tr_strokeWidth = $$value)), tr_strokeWidth);
+
+    	let $tr_fillOpacity,
+    		$$unsubscribe_tr_fillOpacity = noop,
+    		$$subscribe_tr_fillOpacity = () => ($$unsubscribe_tr_fillOpacity(), $$unsubscribe_tr_fillOpacity = subscribe(tr_fillOpacity, $$value => $$invalidate(21, $tr_fillOpacity = $$value)), tr_fillOpacity);
+
+    	let $tr_strokeOpacity,
+    		$$unsubscribe_tr_strokeOpacity = noop,
+    		$$subscribe_tr_strokeOpacity = () => ($$unsubscribe_tr_strokeOpacity(), $$unsubscribe_tr_strokeOpacity = subscribe(tr_strokeOpacity, $$value => $$invalidate(22, $tr_strokeOpacity = $$value)), tr_strokeOpacity);
+
+    	let $tr_opacity,
+    		$$unsubscribe_tr_opacity = noop,
+    		$$subscribe_tr_opacity = () => ($$unsubscribe_tr_opacity(), $$unsubscribe_tr_opacity = subscribe(tr_opacity, $$value => $$invalidate(23, $tr_opacity = $$value)), tr_opacity);
+
+    	let $tr_fontSize,
+    		$$unsubscribe_tr_fontSize = noop,
+    		$$subscribe_tr_fontSize = () => ($$unsubscribe_tr_fontSize(), $$unsubscribe_tr_fontSize = subscribe(tr_fontSize, $$value => $$invalidate(24, $tr_fontSize = $$value)), tr_fontSize);
+
+    	let $tr_fontWeight,
+    		$$unsubscribe_tr_fontWeight = noop,
+    		$$subscribe_tr_fontWeight = () => ($$unsubscribe_tr_fontWeight(), $$unsubscribe_tr_fontWeight = subscribe(tr_fontWeight, $$value => $$invalidate(25, $tr_fontWeight = $$value)), tr_fontWeight);
+
+    	let $interactionManagerContext;
+    	let $graphicContext;
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_rotation());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_screenGeometry());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_radius());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_fill());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_stroke());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_strokeWidth());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_fillOpacity());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_strokeOpacity());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_opacity());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_fontSize());
+    	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_fontWeight());
+    	const markId = getId$1();
+    	let initPhase = true;
+    	const initDone = () => !initPhase;
+    	let { type } = $$props;
+    	let { x = undefined } = $$props;
+    	let { y = undefined } = $$props;
+    	let { x1 = undefined } = $$props;
+    	let { x2 = undefined } = $$props;
+    	let { y1 = undefined } = $$props;
+    	let { y2 = undefined } = $$props;
+    	let { geometry = undefined } = $$props;
+    	let { shape = undefined } = $$props;
+    	let { size = undefined } = $$props;
+    	let { independentAxis = undefined } = $$props;
+    	let { radius = undefined } = $$props;
+    	let { fill = undefined } = $$props;
+    	let { stroke = undefined } = $$props;
+    	let { strokeWidth = undefined } = $$props;
+    	let { strokeOpacity = undefined } = $$props;
+    	let { fillOpacity = undefined } = $$props;
+    	let { opacity = undefined } = $$props;
+    	let { text = undefined } = $$props;
+    	let { fontFamily = undefined } = $$props;
+    	let { fontSize = undefined } = $$props;
+    	let { fontWeight = undefined } = $$props;
+    	let { rotation = undefined } = $$props;
+    	let { anchorPoint = undefined } = $$props;
+    	let { transition = undefined } = $$props;
+    	let { onClick = undefined } = $$props;
+    	let { onMousedown = undefined } = $$props;
+    	let { onMouseup = undefined } = $$props;
+    	let { onMouseover = undefined } = $$props;
+    	let { onMouseout = undefined } = $$props;
+    	let { onMousedrag = undefined } = $$props;
+    	let { onTouchdown = undefined } = $$props;
+    	let { onTouchup = undefined } = $$props;
+    	let { onTouchover = undefined } = $$props;
+    	let { onTouchout = undefined } = $$props;
+    	let { onTouchdrag = undefined } = $$props;
+    	let { onSelect = undefined } = $$props;
+    	let { onDeselect = undefined } = $$props;
+    	let { renderSettings = undefined } = $$props;
+    	let { blockReindexing = false } = $$props;
+    	let { _asPolygon = true } = $$props;
+
+    	// Validate aesthetics every time input changes
+    	let aesthetics = validateAesthetics(type, {
+    		x,
+    		y,
+    		x1,
+    		x2,
+    		y1,
+    		y2,
+    		geometry,
+    		shape,
+    		size,
+    		independentAxis,
+    		radius,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontFamily,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint
+    	});
+
+    	// Create 'positioning' aesthetics object
+    	let positioningAesthetics = {
+    		x,
+    		y,
+    		x1,
+    		x2,
+    		y1,
+    		y2,
+    		geometry,
+    		shape,
+    		size,
+    		independentAxis
+    	};
+
+    	// Select appriopriate geometry conversion functions
+    	let createPixelGeometry = markPixelGeometryFuncs[type];
+
+    	let representAsPolygon = markRepresentAsPolygonFuncs[type];
+
+    	// Check if mark must be represented as polygon
+    	let asPolygon = _asPolygon === true && markRepresentAsPolygonFuncs[type] !== undefined;
+
+    	// Contexts
+    	const graphicContext = subscribe$1();
+
+    	validate_store(graphicContext, "graphicContext");
+    	component_subscribe($$self, graphicContext, value => $$invalidate(30, $graphicContext = value));
+    	const sectionContext = subscribe$2();
+    	validate_store(sectionContext, "sectionContext");
+    	component_subscribe($$self, sectionContext, value => $$invalidate(83, $sectionContext = value));
+    	const interactionManagerContext = subscribe$4();
+    	validate_store(interactionManagerContext, "interactionManagerContext");
+    	component_subscribe($$self, interactionManagerContext, value => $$invalidate(88, $interactionManagerContext = value));
+
+    	// Initiate geometries
+    	let pixelGeometry;
+
+    	let screenGeometry;
+    	updatePixelGeometry();
+    	updateScreenGeometry();
+
+    	// Initiate transitionables
+    	let tr_screenGeometry = createTransitionable("geometry", screenGeometry, transition);
+
+    	validate_store(tr_screenGeometry, "tr_screenGeometry");
+    	$$subscribe_tr_screenGeometry();
+    	let tr_radius = createTransitionable("radius", aesthetics.radius, transition);
+    	validate_store(tr_radius, "tr_radius");
+    	$$subscribe_tr_radius();
+    	let tr_fill = createTransitionable("fill", aesthetics.fill, transition);
+    	validate_store(tr_fill, "tr_fill");
+    	$$subscribe_tr_fill();
+    	let tr_stroke = createTransitionable("stroke", aesthetics.stroke, transition);
+    	validate_store(tr_stroke, "tr_stroke");
+    	$$subscribe_tr_stroke();
+    	let tr_strokeWidth = createTransitionable("strokeWidth", aesthetics.strokeWidth, transition);
+    	validate_store(tr_strokeWidth, "tr_strokeWidth");
+    	$$subscribe_tr_strokeWidth();
+    	let tr_fillOpacity = createTransitionable("fillOpacity", aesthetics.fillOpacity, transition);
+    	validate_store(tr_fillOpacity, "tr_fillOpacity");
+    	$$subscribe_tr_fillOpacity();
+    	let tr_strokeOpacity = createTransitionable("strokeOpacity", aesthetics.strokeOpacity, transition);
+    	validate_store(tr_strokeOpacity, "tr_strokeOpacity");
+    	$$subscribe_tr_strokeOpacity();
+    	let tr_opacity = createTransitionable("opacity", aesthetics.opacity, transition);
+    	validate_store(tr_opacity, "tr_opacity");
+    	$$subscribe_tr_opacity();
+
+    	// text transtitionables
+    	let tr_fontSize = createTransitionable("fontSize", aesthetics.fontSize, transition);
+
+    	validate_store(tr_fontSize, "tr_fontSize");
+    	$$subscribe_tr_fontSize();
+    	let tr_fontWeight = createTransitionable("fontWeight", aesthetics.fontWeight, transition);
+    	validate_store(tr_fontWeight, "tr_fontWeight");
+    	$$subscribe_tr_fontWeight();
+    	let tr_rotation = createTransitionable("rotation", aesthetics.rotation, transition);
+    	validate_store(tr_rotation, "tr_rotation");
+    	$$subscribe_tr_rotation();
+
+    	// non-transitionable aesthetics that need additional calculation
+    	let rotateTransform = `rotate(${$tr_rotation}, ${$tr_screenGeometry.coordinates[0]}, ${$tr_screenGeometry.coordinates[1]})`;
+
+    	let parsedTextAnchorPoint = textAnchorPoint(aesthetics.anchorPoint);
+    	let previousTransition;
+    	let pixelGeometryRecalculationNecessary = false;
+    	let screenGeometryRecalculationNecessary = false;
+    	
+
+    	// Update transitionables when transition settings change
+    	beforeUpdate(() => {
+    		if (!transitionsEqual(previousTransition, transition)) {
+    			previousTransition = transition;
+    			$$subscribe_tr_screenGeometry($$invalidate(3, tr_screenGeometry = createTransitionable("geometry", $tr_screenGeometry, transition)));
+    			$$subscribe_tr_radius($$invalidate(4, tr_radius = createTransitionable("radius", $tr_radius, transition)));
+    			$$subscribe_tr_fill($$invalidate(5, tr_fill = createTransitionable("fill", $tr_fill, transition)));
+    			$$subscribe_tr_stroke($$invalidate(6, tr_stroke = createTransitionable("stroke", $tr_stroke, transition)));
+    			$$subscribe_tr_strokeWidth($$invalidate(7, tr_strokeWidth = createTransitionable("strokeWidth", $tr_strokeWidth, transition)));
+    			$$subscribe_tr_fillOpacity($$invalidate(8, tr_fillOpacity = createTransitionable("fillOpacity", $tr_fillOpacity, transition)));
+    			$$subscribe_tr_strokeOpacity($$invalidate(9, tr_strokeOpacity = createTransitionable("strokeOpacity", $tr_strokeOpacity, transition)));
+    			$$subscribe_tr_opacity($$invalidate(10, tr_opacity = createTransitionable("opacity", $tr_opacity, transition)));
+    			$$subscribe_tr_fontSize($$invalidate(11, tr_fontSize = createTransitionable("fontSize", $tr_fontSize, transition)));
+    			$$subscribe_tr_fontWeight($$invalidate(12, tr_fontWeight = createTransitionable("fontWeight", $tr_fontWeight, transition)));
+    			$$subscribe_tr_rotation($$invalidate(13, tr_rotation = createTransitionable("rotation", $tr_rotation, transition)));
+    		}
+    	});
+
+    	afterUpdate(() => {
+    		initPhase = false;
+    	});
+
+    	onMount(() => {
+    		updateInteractionManagerIfNecessary();
+    	});
+
+    	onDestroy(() => {
+    		removeMarkFromSpatialIndexIfNecessary();
+    	});
+
+    	// Helpers
+    	function scheduleUpdatePixelGeometry() {
+    		$$invalidate(81, pixelGeometryRecalculationNecessary = true);
+    		$$invalidate(82, screenGeometryRecalculationNecessary = true);
+    	}
+
+    	function updatePixelGeometry() {
+    		pixelGeometry = createPixelGeometry(positioningAesthetics, $sectionContext, parseRenderSettings(renderSettings));
+    	}
+
+    	function scheduleUpdateScreenGeometry() {
+    		$$invalidate(82, screenGeometryRecalculationNecessary = true);
+    	}
+
+    	function updateScreenGeometry() {
+    		if (asPolygon) {
+    			$$invalidate(79, screenGeometry = representAsPolygon(pixelGeometry, aesthetics));
+    		} else {
+    			$$invalidate(79, screenGeometry = pixelGeometry);
+    		}
+    	}
+
+    	function updateInteractionManagerIfNecessary() {
+    		if (initPhase || !(blockReindexing || $sectionContext.blockReindexing)) {
+    			removeMarkFromSpatialIndexIfNecessary();
+
+    			if (isInteractiveMouse) {
+    				const markInterface = $interactionManagerContext.mouse().marks();
+    				markInterface.loadMark(type, createDataNecessaryForIndexing());
+    				if (onClick) markInterface.addMarkInteraction("click", markId, onClick);
+    				if (onMousedown) markInterface.addMarkInteraction("mousedown", markId, onMousedown);
+    				if (onMouseup) markInterface.addMarkInteraction("mouseup", markId, onMouseup);
+    				if (onMouseout) markInterface.addMarkInteraction("mouseout", markId, onMouseout);
+    				if (onMouseover) markInterface.addMarkInteraction("mouseover", markId, onMouseover);
+    				if (onMousedrag) markInterface.addMarkInteraction("mousedrag", markId, onMousedrag);
+    			}
+
+    			if (isInteractiveTouch) {
+    				const markInterface = $interactionManagerContext.touch().marks();
+    				markInterface.loadMark(type, createDataNecessaryForIndexing());
+    				if (onTouchdown) markInterface.addMarkInteraction("touchdown", markId, onTouchdown);
+    				if (onTouchup) markInterface.addMarkInteraction("touchup", markId, onTouchup);
+    				if (onTouchover) markInterface.addMarkInteraction("touchover", markId, onTouchover);
+    				if (onTouchout) markInterface.addMarkInteraction("touchout", markId, onTouchout);
+    				if (onTouchdrag) markInterface.addMarkInteraction("touchdrag", markId, onTouchdrag);
+    			}
+    		}
+
+    		removeMarkFromSelectIfNecessary();
+
+    		if (isSelectable) {
+    			const selectManager = $interactionManagerContext.select();
+    			selectManager.loadMark(type, createDataNecessaryForIndexing(), { onSelect, onDeselect });
+    		}
+    	}
+
+    	function removeMarkFromSpatialIndexIfNecessary() {
+    		if (detectIt.hasMouse) {
+    			const markMouseInterface = $interactionManagerContext.mouse().marks();
+
+    			if (markMouseInterface.markIsLoaded(markId)) {
+    				markMouseInterface.removeAllMarkInteractions(markId);
+    				markMouseInterface.removeMark(markId);
+    			}
+    		}
+
+    		if (detectIt.hasTouch) {
+    			const markTouchInterface = $interactionManagerContext.touch().marks();
+
+    			if (markTouchInterface.markIsLoaded(markId)) {
+    				markTouchInterface.removeAllMarkInteractions(markId);
+    				markTouchInterface.removeMark(markId);
+    			}
+    		}
+    	}
+
+    	function removeMarkFromSelectIfNecessary() {
+    		const selectManager = $interactionManagerContext.select();
+
+    		if (selectManager.markIsLoaded(markId)) {
+    			selectManager.removeMark(markId);
+    		}
+    	}
+
+    	function createDataNecessaryForIndexing() {
+    		return createDataNecessaryForIndexingMark(type, markId, { screenGeometry, pixelGeometry }, aesthetics);
+    	}
+
+    	const writable_props = [
+    		"type",
+    		"x",
+    		"y",
+    		"x1",
+    		"x2",
+    		"y1",
+    		"y2",
+    		"geometry",
+    		"shape",
+    		"size",
+    		"independentAxis",
+    		"radius",
+    		"fill",
+    		"stroke",
+    		"strokeWidth",
+    		"strokeOpacity",
+    		"fillOpacity",
+    		"opacity",
+    		"text",
+    		"fontFamily",
+    		"fontSize",
+    		"fontWeight",
+    		"rotation",
+    		"anchorPoint",
+    		"transition",
+    		"onClick",
+    		"onMousedown",
+    		"onMouseup",
+    		"onMouseover",
+    		"onMouseout",
+    		"onMousedrag",
+    		"onTouchdown",
+    		"onTouchup",
+    		"onTouchover",
+    		"onTouchout",
+    		"onTouchdrag",
+    		"onSelect",
+    		"onDeselect",
+    		"renderSettings",
+    		"blockReindexing",
+    		"_asPolygon"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<Mark> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("Mark", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("type" in $$props) $$invalidate(0, type = $$props.type);
+    		if ("x" in $$props) $$invalidate(34, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(35, y = $$props.y);
+    		if ("x1" in $$props) $$invalidate(36, x1 = $$props.x1);
+    		if ("x2" in $$props) $$invalidate(37, x2 = $$props.x2);
+    		if ("y1" in $$props) $$invalidate(38, y1 = $$props.y1);
+    		if ("y2" in $$props) $$invalidate(39, y2 = $$props.y2);
+    		if ("geometry" in $$props) $$invalidate(40, geometry = $$props.geometry);
+    		if ("shape" in $$props) $$invalidate(41, shape = $$props.shape);
+    		if ("size" in $$props) $$invalidate(42, size = $$props.size);
+    		if ("independentAxis" in $$props) $$invalidate(43, independentAxis = $$props.independentAxis);
+    		if ("radius" in $$props) $$invalidate(44, radius = $$props.radius);
+    		if ("fill" in $$props) $$invalidate(45, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(46, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(47, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(48, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(49, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(50, opacity = $$props.opacity);
+    		if ("text" in $$props) $$invalidate(51, text = $$props.text);
+    		if ("fontFamily" in $$props) $$invalidate(1, fontFamily = $$props.fontFamily);
+    		if ("fontSize" in $$props) $$invalidate(52, fontSize = $$props.fontSize);
+    		if ("fontWeight" in $$props) $$invalidate(53, fontWeight = $$props.fontWeight);
+    		if ("rotation" in $$props) $$invalidate(54, rotation = $$props.rotation);
+    		if ("anchorPoint" in $$props) $$invalidate(55, anchorPoint = $$props.anchorPoint);
+    		if ("transition" in $$props) $$invalidate(56, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(57, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(58, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(59, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(60, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(61, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(62, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(63, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(64, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(65, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(66, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(67, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(68, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(69, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(70, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(71, blockReindexing = $$props.blockReindexing);
+    		if ("_asPolygon" in $$props) $$invalidate(72, _asPolygon = $$props._asPolygon);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		idCounter: idCounter$1,
+    		getId: getId$1,
+    		beforeUpdate,
+    		afterUpdate,
+    		onMount,
+    		onDestroy,
+    		detectIt,
+    		GraphicContext: GraphicContext$1,
+    		SectionContext,
+    		InteractionManagerContext,
+    		validateAesthetics,
+    		markPixelGeometryFuncs,
+    		markRepresentAsPolygonFuncs,
+    		createDataNecessaryForIndexingMark,
+    		createTransitionable,
+    		transitionsEqual,
+    		any,
+    		parseRenderSettings,
+    		generatePath,
+    		textAnchorPoint,
+    		markId,
+    		initPhase,
+    		initDone,
+    		type,
+    		x,
+    		y,
+    		x1,
+    		x2,
+    		y1,
+    		y2,
+    		geometry,
+    		shape,
+    		size,
+    		independentAxis,
+    		radius,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontFamily,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing,
+    		_asPolygon,
+    		aesthetics,
+    		positioningAesthetics,
+    		createPixelGeometry,
+    		representAsPolygon,
+    		asPolygon,
+    		graphicContext,
+    		sectionContext,
+    		interactionManagerContext,
+    		pixelGeometry,
+    		screenGeometry,
+    		tr_screenGeometry,
+    		tr_radius,
+    		tr_fill,
+    		tr_stroke,
+    		tr_strokeWidth,
+    		tr_fillOpacity,
+    		tr_strokeOpacity,
+    		tr_opacity,
+    		tr_fontSize,
+    		tr_fontWeight,
+    		tr_rotation,
+    		rotateTransform,
+    		parsedTextAnchorPoint,
+    		previousTransition,
+    		pixelGeometryRecalculationNecessary,
+    		screenGeometryRecalculationNecessary,
+    		scheduleUpdatePixelGeometry,
+    		updatePixelGeometry,
+    		scheduleUpdateScreenGeometry,
+    		updateScreenGeometry,
+    		updateInteractionManagerIfNecessary,
+    		removeMarkFromSpatialIndexIfNecessary,
+    		removeMarkFromSelectIfNecessary,
+    		createDataNecessaryForIndexing,
+    		$sectionContext,
+    		$tr_rotation,
+    		$tr_screenGeometry,
+    		$tr_radius,
+    		$tr_fill,
+    		$tr_stroke,
+    		$tr_strokeWidth,
+    		$tr_fillOpacity,
+    		$tr_strokeOpacity,
+    		$tr_opacity,
+    		$tr_fontSize,
+    		$tr_fontWeight,
+    		isInteractiveMouse,
+    		isInteractiveTouch,
+    		isSelectable,
+    		$interactionManagerContext,
+    		renderPolygon,
+    		renderCircle,
+    		renderLine,
+    		renderLabel,
+    		$graphicContext
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("initPhase" in $$props) initPhase = $$props.initPhase;
+    		if ("type" in $$props) $$invalidate(0, type = $$props.type);
+    		if ("x" in $$props) $$invalidate(34, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(35, y = $$props.y);
+    		if ("x1" in $$props) $$invalidate(36, x1 = $$props.x1);
+    		if ("x2" in $$props) $$invalidate(37, x2 = $$props.x2);
+    		if ("y1" in $$props) $$invalidate(38, y1 = $$props.y1);
+    		if ("y2" in $$props) $$invalidate(39, y2 = $$props.y2);
+    		if ("geometry" in $$props) $$invalidate(40, geometry = $$props.geometry);
+    		if ("shape" in $$props) $$invalidate(41, shape = $$props.shape);
+    		if ("size" in $$props) $$invalidate(42, size = $$props.size);
+    		if ("independentAxis" in $$props) $$invalidate(43, independentAxis = $$props.independentAxis);
+    		if ("radius" in $$props) $$invalidate(44, radius = $$props.radius);
+    		if ("fill" in $$props) $$invalidate(45, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(46, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(47, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(48, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(49, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(50, opacity = $$props.opacity);
+    		if ("text" in $$props) $$invalidate(51, text = $$props.text);
+    		if ("fontFamily" in $$props) $$invalidate(1, fontFamily = $$props.fontFamily);
+    		if ("fontSize" in $$props) $$invalidate(52, fontSize = $$props.fontSize);
+    		if ("fontWeight" in $$props) $$invalidate(53, fontWeight = $$props.fontWeight);
+    		if ("rotation" in $$props) $$invalidate(54, rotation = $$props.rotation);
+    		if ("anchorPoint" in $$props) $$invalidate(55, anchorPoint = $$props.anchorPoint);
+    		if ("transition" in $$props) $$invalidate(56, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(57, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(58, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(59, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(60, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(61, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(62, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(63, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(64, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(65, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(66, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(67, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(68, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(69, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(70, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(71, blockReindexing = $$props.blockReindexing);
+    		if ("_asPolygon" in $$props) $$invalidate(72, _asPolygon = $$props._asPolygon);
+    		if ("aesthetics" in $$props) $$invalidate(2, aesthetics = $$props.aesthetics);
+    		if ("positioningAesthetics" in $$props) $$invalidate(74, positioningAesthetics = $$props.positioningAesthetics);
+    		if ("createPixelGeometry" in $$props) createPixelGeometry = $$props.createPixelGeometry;
+    		if ("representAsPolygon" in $$props) representAsPolygon = $$props.representAsPolygon;
+    		if ("asPolygon" in $$props) $$invalidate(77, asPolygon = $$props.asPolygon);
+    		if ("pixelGeometry" in $$props) pixelGeometry = $$props.pixelGeometry;
+    		if ("screenGeometry" in $$props) $$invalidate(79, screenGeometry = $$props.screenGeometry);
+    		if ("tr_screenGeometry" in $$props) $$subscribe_tr_screenGeometry($$invalidate(3, tr_screenGeometry = $$props.tr_screenGeometry));
+    		if ("tr_radius" in $$props) $$subscribe_tr_radius($$invalidate(4, tr_radius = $$props.tr_radius));
+    		if ("tr_fill" in $$props) $$subscribe_tr_fill($$invalidate(5, tr_fill = $$props.tr_fill));
+    		if ("tr_stroke" in $$props) $$subscribe_tr_stroke($$invalidate(6, tr_stroke = $$props.tr_stroke));
+    		if ("tr_strokeWidth" in $$props) $$subscribe_tr_strokeWidth($$invalidate(7, tr_strokeWidth = $$props.tr_strokeWidth));
+    		if ("tr_fillOpacity" in $$props) $$subscribe_tr_fillOpacity($$invalidate(8, tr_fillOpacity = $$props.tr_fillOpacity));
+    		if ("tr_strokeOpacity" in $$props) $$subscribe_tr_strokeOpacity($$invalidate(9, tr_strokeOpacity = $$props.tr_strokeOpacity));
+    		if ("tr_opacity" in $$props) $$subscribe_tr_opacity($$invalidate(10, tr_opacity = $$props.tr_opacity));
+    		if ("tr_fontSize" in $$props) $$subscribe_tr_fontSize($$invalidate(11, tr_fontSize = $$props.tr_fontSize));
+    		if ("tr_fontWeight" in $$props) $$subscribe_tr_fontWeight($$invalidate(12, tr_fontWeight = $$props.tr_fontWeight));
+    		if ("tr_rotation" in $$props) $$subscribe_tr_rotation($$invalidate(13, tr_rotation = $$props.tr_rotation));
+    		if ("rotateTransform" in $$props) $$invalidate(14, rotateTransform = $$props.rotateTransform);
+    		if ("parsedTextAnchorPoint" in $$props) $$invalidate(15, parsedTextAnchorPoint = $$props.parsedTextAnchorPoint);
+    		if ("previousTransition" in $$props) previousTransition = $$props.previousTransition;
+    		if ("pixelGeometryRecalculationNecessary" in $$props) $$invalidate(81, pixelGeometryRecalculationNecessary = $$props.pixelGeometryRecalculationNecessary);
+    		if ("screenGeometryRecalculationNecessary" in $$props) $$invalidate(82, screenGeometryRecalculationNecessary = $$props.screenGeometryRecalculationNecessary);
+    		if ("isInteractiveMouse" in $$props) isInteractiveMouse = $$props.isInteractiveMouse;
+    		if ("isInteractiveTouch" in $$props) isInteractiveTouch = $$props.isInteractiveTouch;
+    		if ("isSelectable" in $$props) isSelectable = $$props.isSelectable;
+    		if ("renderPolygon" in $$props) $$invalidate(26, renderPolygon = $$props.renderPolygon);
+    		if ("renderCircle" in $$props) $$invalidate(27, renderCircle = $$props.renderCircle);
+    		if ("renderLine" in $$props) $$invalidate(28, renderLine = $$props.renderLine);
+    		if ("renderLabel" in $$props) $$invalidate(29, renderLabel = $$props.renderLabel);
+    	};
+
+    	let isInteractiveMouse;
+    	let isInteractiveTouch;
+    	let isSelectable;
+    	let renderPolygon;
+    	let renderCircle;
+    	let renderLine;
+    	let renderLabel;
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	$$self.$$.update = () => {
+    		if ($$self.$$.dirty[0] & /*type, fontFamily*/ 3 | $$self.$$.dirty[1] & /*x, y, x1, x2, y1, y2, geometry, shape, size, independentAxis, radius, fill, stroke, strokeWidth, strokeOpacity, fillOpacity, opacity, text, fontSize, fontWeight, rotation, anchorPoint*/ 33554424) {
+    			 {
+    				if (initDone()) {
+    					$$invalidate(2, aesthetics = validateAesthetics(type, {
+    						x,
+    						y,
+    						x1,
+    						x2,
+    						y1,
+    						y2,
+    						geometry,
+    						shape,
+    						size,
+    						independentAxis,
+    						radius,
+    						fill,
+    						stroke,
+    						strokeWidth,
+    						strokeOpacity,
+    						fillOpacity,
+    						opacity,
+    						text,
+    						fontFamily,
+    						fontSize,
+    						fontWeight,
+    						rotation,
+    						anchorPoint
+    					}));
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[1] & /*x, y, x1, x2, y1, y2, geometry, shape, size, independentAxis*/ 8184) {
+    			 {
+    				if (initDone()) {
+    					$$invalidate(74, positioningAesthetics = {
+    						x,
+    						y,
+    						x1,
+    						x2,
+    						y1,
+    						y2,
+    						geometry,
+    						shape,
+    						size,
+    						independentAxis
+    					});
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*type*/ 1) {
+    			 {
+    				if (initDone()) {
+    					createPixelGeometry = markPixelGeometryFuncs[type];
+    					representAsPolygon = markRepresentAsPolygonFuncs[type];
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*type*/ 1 | $$self.$$.dirty[2] & /*_asPolygon*/ 1024) {
+    			 {
+    				if (initDone()) {
+    					$$invalidate(77, asPolygon = _asPolygon === true && markRepresentAsPolygonFuncs[type] !== undefined);
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[2] & /*positioningAesthetics, $sectionContext, renderSettings*/ 2101504) {
+    			// Handle changes to geometry
+    			 {
+    				if (initDone()) {
+    					scheduleUpdatePixelGeometry(positioningAesthetics, $sectionContext, parseRenderSettings(renderSettings));
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_radius, aesthetics, tr_strokeWidth*/ 148 | $$self.$$.dirty[2] & /*asPolygon*/ 32768) {
+    			// Handle radius and strokeWidth changes if Point or Line is not represented as Polygon
+    			 {
+    				if (initDone()) {
+    					if (!asPolygon) {
+    						tr_radius.set(aesthetics.radius);
+    						tr_strokeWidth.set(aesthetics.strokeWidth);
+    					}
+
+    					if (asPolygon) {
+    						scheduleUpdateScreenGeometry();
+    					}
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_fill, aesthetics*/ 36) {
+    			// Handle other changes
+    			 {
+    				if (initDone()) tr_fill.set(aesthetics.fill);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_stroke, aesthetics*/ 68) {
+    			 {
+    				if (initDone()) tr_stroke.set(aesthetics.stroke);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_strokeWidth, aesthetics*/ 132) {
+    			 {
+    				if (initDone()) tr_strokeWidth.set(aesthetics.strokeWidth);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_fillOpacity, aesthetics*/ 260) {
+    			 {
+    				if (initDone()) tr_fillOpacity.set(aesthetics.fillOpacity);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_strokeOpacity, aesthetics*/ 516) {
+    			 {
+    				if (initDone()) tr_strokeOpacity.set(aesthetics.strokeOpacity);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_opacity, aesthetics*/ 1028) {
+    			 {
+    				if (initDone()) tr_opacity.set(aesthetics.opacity);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_fontSize, aesthetics*/ 2052) {
+    			// text aes changes
+    			 {
+    				if (initDone()) tr_fontSize.set(aesthetics.fontSize);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_fontWeight, aesthetics*/ 4100) {
+    			 {
+    				if (initDone()) tr_fontWeight.set(aesthetics.fontWeight);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_rotation, aesthetics*/ 8196) {
+    			 {
+    				if (initDone()) tr_rotation.set(aesthetics.rotation);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tr_screenGeometry*/ 8 | $$self.$$.dirty[2] & /*pixelGeometryRecalculationNecessary, screenGeometryRecalculationNecessary, screenGeometry*/ 1703936) {
+    			 {
+    				if (initDone()) {
+    					if (pixelGeometryRecalculationNecessary) updatePixelGeometry();
+
+    					if (screenGeometryRecalculationNecessary) {
+    						updateScreenGeometry();
+    						tr_screenGeometry.set(screenGeometry);
+    						updateInteractionManagerIfNecessary();
+    					}
+
+    					$$invalidate(81, pixelGeometryRecalculationNecessary = false);
+    					$$invalidate(82, screenGeometryRecalculationNecessary = false);
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*$tr_screenGeometry*/ 65536 | $$self.$$.dirty[2] & /*$tr_rotation*/ 4194304) {
+    			 {
+    				if (initDone()) $$invalidate(14, rotateTransform = `rotate(${$tr_rotation}, ${$tr_screenGeometry.coordinates[0]}, ${$tr_screenGeometry.coordinates[1]})`);
+    			}
+    		}
+
+    		if ($$self.$$.dirty[0] & /*aesthetics*/ 4) {
+    			 {
+    				if (initDone()) $$invalidate(15, parsedTextAnchorPoint = textAnchorPoint(aesthetics.anchorPoint));
+    			}
+    		}
+
+    		if ($$self.$$.dirty[1] & /*onClick, onMousedown, onMouseup, onMouseover, onMouseout*/ 2080374784 | $$self.$$.dirty[2] & /*onMousedrag*/ 1) {
+    			// Interactivity
+    			 isInteractiveMouse = detectIt.hasMouse && any(onClick, onMousedown, onMouseup, onMouseover, onMouseout, onMousedrag);
+    		}
+
+    		if ($$self.$$.dirty[2] & /*onTouchdown, onTouchup, onTouchover, onTouchout, onTouchdrag*/ 62) {
+    			 isInteractiveTouch = detectIt.hasTouch && any(onTouchdown, onTouchup, onTouchover, onTouchout, onTouchdrag);
+    		}
+
+    		if ($$self.$$.dirty[2] & /*onSelect, onDeselect*/ 192) {
+    			 isSelectable = onSelect !== undefined || onDeselect !== undefined;
+    		}
+
+    		if ($$self.$$.dirty[0] & /*type*/ 1 | $$self.$$.dirty[2] & /*asPolygon*/ 32768) {
+    			 $$invalidate(26, renderPolygon = !["Point", "Line", "Label"].includes(type) || asPolygon);
+    		}
+
+    		if ($$self.$$.dirty[0] & /*type*/ 1 | $$self.$$.dirty[2] & /*asPolygon*/ 32768) {
+    			 $$invalidate(27, renderCircle = type === "Point" && !asPolygon);
+    		}
+
+    		if ($$self.$$.dirty[0] & /*type*/ 1 | $$self.$$.dirty[2] & /*asPolygon*/ 32768) {
+    			 $$invalidate(28, renderLine = type === "Line" && !asPolygon);
+    		}
+
+    		if ($$self.$$.dirty[0] & /*type*/ 1) {
+    			 $$invalidate(29, renderLabel = type === "Label");
+    		}
+    	};
+
+    	return [
+    		type,
+    		fontFamily,
+    		aesthetics,
+    		tr_screenGeometry,
+    		tr_radius,
+    		tr_fill,
+    		tr_stroke,
+    		tr_strokeWidth,
+    		tr_fillOpacity,
+    		tr_strokeOpacity,
+    		tr_opacity,
+    		tr_fontSize,
+    		tr_fontWeight,
+    		tr_rotation,
+    		rotateTransform,
+    		parsedTextAnchorPoint,
+    		$tr_screenGeometry,
+    		$tr_radius,
+    		$tr_fill,
+    		$tr_stroke,
+    		$tr_strokeWidth,
+    		$tr_fillOpacity,
+    		$tr_strokeOpacity,
+    		$tr_opacity,
+    		$tr_fontSize,
+    		$tr_fontWeight,
+    		renderPolygon,
+    		renderCircle,
+    		renderLine,
+    		renderLabel,
+    		$graphicContext,
+    		graphicContext,
+    		sectionContext,
+    		interactionManagerContext,
+    		x,
+    		y,
+    		x1,
+    		x2,
+    		y1,
+    		y2,
+    		geometry,
+    		shape,
+    		size,
+    		independentAxis,
+    		radius,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing,
+    		_asPolygon
+    	];
+    }
+
+    class Mark extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(
+    			this,
+    			options,
+    			instance$1,
+    			create_fragment$1,
+    			safe_not_equal,
+    			{
+    				type: 0,
+    				x: 34,
+    				y: 35,
+    				x1: 36,
+    				x2: 37,
+    				y1: 38,
+    				y2: 39,
+    				geometry: 40,
+    				shape: 41,
+    				size: 42,
+    				independentAxis: 43,
+    				radius: 44,
+    				fill: 45,
+    				stroke: 46,
+    				strokeWidth: 47,
+    				strokeOpacity: 48,
+    				fillOpacity: 49,
+    				opacity: 50,
+    				text: 51,
+    				fontFamily: 1,
+    				fontSize: 52,
+    				fontWeight: 53,
+    				rotation: 54,
+    				anchorPoint: 55,
+    				transition: 56,
+    				onClick: 57,
+    				onMousedown: 58,
+    				onMouseup: 59,
+    				onMouseover: 60,
+    				onMouseout: 61,
+    				onMousedrag: 62,
+    				onTouchdown: 63,
+    				onTouchup: 64,
+    				onTouchover: 65,
+    				onTouchout: 66,
+    				onTouchdrag: 67,
+    				onSelect: 68,
+    				onDeselect: 69,
+    				renderSettings: 70,
+    				blockReindexing: 71,
+    				_asPolygon: 72
+    			},
+    			[-1, -1, -1, -1]
+    		);
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Mark",
+    			options,
+    			id: create_fragment$1.name
+    		});
+
+    		const { ctx } = this.$$;
+    		const props = options.props || {};
+
+    		if (/*type*/ ctx[0] === undefined && !("type" in props)) {
+    			console.warn("<Mark> was created without expected prop 'type'");
+    		}
+    	}
+
+    	get type() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set type(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get x() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get x1() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x1(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get x2() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x2(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y1() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y1(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y2() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y2(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get geometry() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set geometry(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get shape() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set shape(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get size() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set size(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get independentAxis() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set independentAxis(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get radius() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set radius(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fill() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fill(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get stroke() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set stroke(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeWidth() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeWidth(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeOpacity() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeOpacity(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fillOpacity() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fillOpacity(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get opacity() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set opacity(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get text() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set text(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontFamily() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontFamily(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontSize() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontSize(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontWeight() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontWeight(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get rotation() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set rotation(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get anchorPoint() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set anchorPoint(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedown() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedown(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseup() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseup(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseover() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseover(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseout() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseout(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedrag() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedrag(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdown() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdown(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchup() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchup(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchover() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchover(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchout() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchout(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdrag() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdrag(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onSelect() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onSelect(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onDeselect() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onDeselect(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get renderSettings() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set renderSettings(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get blockReindexing() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set blockReindexing(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get _asPolygon() {
+    		throw new Error("<Mark>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set _asPolygon(value) {
+    		throw new Error("<Mark>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* node_modules/@snlab/florence/src/components/Marks/Rectangle/Rectangle.svelte generated by Svelte v3.21.0 */
+
+    function create_fragment$2(ctx) {
+    	let current;
+
+    	const mark = new Mark({
+    			props: {
+    				type: "Rectangle",
+    				x1: /*x1*/ ctx[0],
+    				x2: /*x2*/ ctx[1],
+    				y1: /*y1*/ ctx[2],
+    				y2: /*y2*/ ctx[3],
+    				fill: /*fill*/ ctx[4],
+    				stroke: /*stroke*/ ctx[5],
+    				strokeWidth: /*strokeWidth*/ ctx[6],
+    				strokeOpacity: /*strokeOpacity*/ ctx[7],
+    				fillOpacity: /*fillOpacity*/ ctx[8],
+    				opacity: /*opacity*/ ctx[9],
+    				transition: /*transition*/ ctx[10],
+    				onClick: /*onClick*/ ctx[11],
+    				onMousedown: /*onMousedown*/ ctx[12],
+    				onMouseup: /*onMouseup*/ ctx[13],
+    				onMouseover: /*onMouseover*/ ctx[14],
+    				onMouseout: /*onMouseout*/ ctx[15],
+    				onMousedrag: /*onMousedrag*/ ctx[16],
+    				onTouchdown: /*onTouchdown*/ ctx[17],
+    				onTouchup: /*onTouchup*/ ctx[18],
+    				onTouchover: /*onTouchover*/ ctx[19],
+    				onTouchout: /*onTouchout*/ ctx[20],
+    				onTouchdrag: /*onTouchdrag*/ ctx[21],
+    				onSelect: /*onSelect*/ ctx[22],
+    				onDeselect: /*onDeselect*/ ctx[23],
+    				renderSettings: /*renderSettings*/ ctx[24],
+    				blockReindexing: /*blockReindexing*/ ctx[25],
+    				_asPolygon: false
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(mark.$$.fragment);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(mark, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, [dirty]) {
+    			const mark_changes = {};
+    			if (dirty & /*x1*/ 1) mark_changes.x1 = /*x1*/ ctx[0];
+    			if (dirty & /*x2*/ 2) mark_changes.x2 = /*x2*/ ctx[1];
+    			if (dirty & /*y1*/ 4) mark_changes.y1 = /*y1*/ ctx[2];
+    			if (dirty & /*y2*/ 8) mark_changes.y2 = /*y2*/ ctx[3];
+    			if (dirty & /*fill*/ 16) mark_changes.fill = /*fill*/ ctx[4];
+    			if (dirty & /*stroke*/ 32) mark_changes.stroke = /*stroke*/ ctx[5];
+    			if (dirty & /*strokeWidth*/ 64) mark_changes.strokeWidth = /*strokeWidth*/ ctx[6];
+    			if (dirty & /*strokeOpacity*/ 128) mark_changes.strokeOpacity = /*strokeOpacity*/ ctx[7];
+    			if (dirty & /*fillOpacity*/ 256) mark_changes.fillOpacity = /*fillOpacity*/ ctx[8];
+    			if (dirty & /*opacity*/ 512) mark_changes.opacity = /*opacity*/ ctx[9];
+    			if (dirty & /*transition*/ 1024) mark_changes.transition = /*transition*/ ctx[10];
+    			if (dirty & /*onClick*/ 2048) mark_changes.onClick = /*onClick*/ ctx[11];
+    			if (dirty & /*onMousedown*/ 4096) mark_changes.onMousedown = /*onMousedown*/ ctx[12];
+    			if (dirty & /*onMouseup*/ 8192) mark_changes.onMouseup = /*onMouseup*/ ctx[13];
+    			if (dirty & /*onMouseover*/ 16384) mark_changes.onMouseover = /*onMouseover*/ ctx[14];
+    			if (dirty & /*onMouseout*/ 32768) mark_changes.onMouseout = /*onMouseout*/ ctx[15];
+    			if (dirty & /*onMousedrag*/ 65536) mark_changes.onMousedrag = /*onMousedrag*/ ctx[16];
+    			if (dirty & /*onTouchdown*/ 131072) mark_changes.onTouchdown = /*onTouchdown*/ ctx[17];
+    			if (dirty & /*onTouchup*/ 262144) mark_changes.onTouchup = /*onTouchup*/ ctx[18];
+    			if (dirty & /*onTouchover*/ 524288) mark_changes.onTouchover = /*onTouchover*/ ctx[19];
+    			if (dirty & /*onTouchout*/ 1048576) mark_changes.onTouchout = /*onTouchout*/ ctx[20];
+    			if (dirty & /*onTouchdrag*/ 2097152) mark_changes.onTouchdrag = /*onTouchdrag*/ ctx[21];
+    			if (dirty & /*onSelect*/ 4194304) mark_changes.onSelect = /*onSelect*/ ctx[22];
+    			if (dirty & /*onDeselect*/ 8388608) mark_changes.onDeselect = /*onDeselect*/ ctx[23];
+    			if (dirty & /*renderSettings*/ 16777216) mark_changes.renderSettings = /*renderSettings*/ ctx[24];
+    			if (dirty & /*blockReindexing*/ 33554432) mark_changes.blockReindexing = /*blockReindexing*/ ctx[25];
+    			mark.$set(mark_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(mark.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(mark.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(mark, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$2.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$2($$self, $$props, $$invalidate) {
+    	let { x1 = undefined } = $$props;
+    	let { x2 = undefined } = $$props;
+    	let { y1 = undefined } = $$props;
+    	let { y2 = undefined } = $$props;
+    	let { fill = undefined } = $$props;
+    	let { stroke = undefined } = $$props;
+    	let { strokeWidth = undefined } = $$props;
+    	let { strokeOpacity = undefined } = $$props;
+    	let { fillOpacity = undefined } = $$props;
+    	let { opacity = undefined } = $$props;
+    	let { transition = undefined } = $$props;
+    	let { onClick = undefined } = $$props;
+    	let { onMousedown = undefined } = $$props;
+    	let { onMouseup = undefined } = $$props;
+    	let { onMouseover = undefined } = $$props;
+    	let { onMouseout = undefined } = $$props;
+    	let { onMousedrag = undefined } = $$props;
+    	let { onTouchdown = undefined } = $$props;
+    	let { onTouchup = undefined } = $$props;
+    	let { onTouchover = undefined } = $$props;
+    	let { onTouchout = undefined } = $$props;
+    	let { onTouchdrag = undefined } = $$props;
+    	let { onSelect = undefined } = $$props;
+    	let { onDeselect = undefined } = $$props;
+    	let { renderSettings = undefined } = $$props;
+    	let { blockReindexing = false } = $$props;
+
+    	const writable_props = [
+    		"x1",
+    		"x2",
+    		"y1",
+    		"y2",
+    		"fill",
+    		"stroke",
+    		"strokeWidth",
+    		"strokeOpacity",
+    		"fillOpacity",
+    		"opacity",
+    		"transition",
+    		"onClick",
+    		"onMousedown",
+    		"onMouseup",
+    		"onMouseover",
+    		"onMouseout",
+    		"onMousedrag",
+    		"onTouchdown",
+    		"onTouchup",
+    		"onTouchover",
+    		"onTouchout",
+    		"onTouchdrag",
+    		"onSelect",
+    		"onDeselect",
+    		"renderSettings",
+    		"blockReindexing"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<Rectangle> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("Rectangle", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("x1" in $$props) $$invalidate(0, x1 = $$props.x1);
+    		if ("x2" in $$props) $$invalidate(1, x2 = $$props.x2);
+    		if ("y1" in $$props) $$invalidate(2, y1 = $$props.y1);
+    		if ("y2" in $$props) $$invalidate(3, y2 = $$props.y2);
+    		if ("fill" in $$props) $$invalidate(4, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(5, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(6, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(7, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(8, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(9, opacity = $$props.opacity);
+    		if ("transition" in $$props) $$invalidate(10, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(11, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(12, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(13, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(14, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(15, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(16, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(17, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(18, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(19, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(20, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(21, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(22, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(23, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(24, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(25, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Mark,
+    		x1,
+    		x2,
+    		y1,
+    		y2,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("x1" in $$props) $$invalidate(0, x1 = $$props.x1);
+    		if ("x2" in $$props) $$invalidate(1, x2 = $$props.x2);
+    		if ("y1" in $$props) $$invalidate(2, y1 = $$props.y1);
+    		if ("y2" in $$props) $$invalidate(3, y2 = $$props.y2);
+    		if ("fill" in $$props) $$invalidate(4, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(5, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(6, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(7, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(8, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(9, opacity = $$props.opacity);
+    		if ("transition" in $$props) $$invalidate(10, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(11, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(12, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(13, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(14, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(15, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(16, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(17, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(18, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(19, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(20, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(21, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(22, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(23, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(24, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(25, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		x1,
+    		x2,
+    		y1,
+    		y2,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing
+    	];
+    }
+
+    class Rectangle extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(this, options, instance$2, create_fragment$2, safe_not_equal, {
+    			x1: 0,
+    			x2: 1,
+    			y1: 2,
+    			y2: 3,
+    			fill: 4,
+    			stroke: 5,
+    			strokeWidth: 6,
+    			strokeOpacity: 7,
+    			fillOpacity: 8,
+    			opacity: 9,
+    			transition: 10,
+    			onClick: 11,
+    			onMousedown: 12,
+    			onMouseup: 13,
+    			onMouseover: 14,
+    			onMouseout: 15,
+    			onMousedrag: 16,
+    			onTouchdown: 17,
+    			onTouchup: 18,
+    			onTouchover: 19,
+    			onTouchout: 20,
+    			onTouchdrag: 21,
+    			onSelect: 22,
+    			onDeselect: 23,
+    			renderSettings: 24,
+    			blockReindexing: 25
+    		});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Rectangle",
+    			options,
+    			id: create_fragment$2.name
+    		});
+    	}
+
+    	get x1() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x1(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get x2() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x2(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y1() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y1(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y2() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y2(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fill() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fill(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get stroke() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set stroke(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeWidth() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeWidth(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeOpacity() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeOpacity(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fillOpacity() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fillOpacity(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get opacity() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set opacity(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedown() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedown(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseup() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseup(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseover() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseover(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseout() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseout(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedrag() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedrag(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdown() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdown(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchup() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchup(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchover() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchover(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchout() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchout(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdrag() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdrag(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onSelect() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onSelect(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onDeselect() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onDeselect(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get renderSettings() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set renderSettings(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get blockReindexing() {
+    		throw new Error("<Rectangle>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set blockReindexing(value) {
+    		throw new Error("<Rectangle>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* node_modules/@snlab/florence/src/components/Marks/Line/Line.svelte generated by Svelte v3.21.0 */
+
+    function create_fragment$3(ctx) {
+    	let current;
+
+    	const mark = new Mark({
+    			props: {
+    				type: "Line",
+    				x: /*x*/ ctx[0],
+    				y: /*y*/ ctx[1],
+    				geometry: /*geometry*/ ctx[2],
+    				strokeWidth: /*strokeWidth*/ ctx[3],
+    				stroke: /*stroke*/ ctx[4],
+    				opacity: /*opacity*/ ctx[5],
+    				transition: /*transition*/ ctx[6],
+    				onClick: /*onClick*/ ctx[7],
+    				onMousedown: /*onMousedown*/ ctx[8],
+    				onMouseup: /*onMouseup*/ ctx[9],
+    				onMouseover: /*onMouseover*/ ctx[10],
+    				onMouseout: /*onMouseout*/ ctx[11],
+    				onMousedrag: /*onMousedrag*/ ctx[12],
+    				onTouchdown: /*onTouchdown*/ ctx[13],
+    				onTouchup: /*onTouchup*/ ctx[14],
+    				onTouchover: /*onTouchover*/ ctx[15],
+    				onTouchout: /*onTouchout*/ ctx[16],
+    				onTouchdrag: /*onTouchdrag*/ ctx[17],
+    				onSelect: /*onSelect*/ ctx[18],
+    				onDeselect: /*onDeselect*/ ctx[19],
+    				renderSettings: /*renderSettings*/ ctx[20],
+    				blockReindexing: /*blockReindexing*/ ctx[21],
+    				_asPolygon: false
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(mark.$$.fragment);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(mark, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, [dirty]) {
+    			const mark_changes = {};
+    			if (dirty & /*x*/ 1) mark_changes.x = /*x*/ ctx[0];
+    			if (dirty & /*y*/ 2) mark_changes.y = /*y*/ ctx[1];
+    			if (dirty & /*geometry*/ 4) mark_changes.geometry = /*geometry*/ ctx[2];
+    			if (dirty & /*strokeWidth*/ 8) mark_changes.strokeWidth = /*strokeWidth*/ ctx[3];
+    			if (dirty & /*stroke*/ 16) mark_changes.stroke = /*stroke*/ ctx[4];
+    			if (dirty & /*opacity*/ 32) mark_changes.opacity = /*opacity*/ ctx[5];
+    			if (dirty & /*transition*/ 64) mark_changes.transition = /*transition*/ ctx[6];
+    			if (dirty & /*onClick*/ 128) mark_changes.onClick = /*onClick*/ ctx[7];
+    			if (dirty & /*onMousedown*/ 256) mark_changes.onMousedown = /*onMousedown*/ ctx[8];
+    			if (dirty & /*onMouseup*/ 512) mark_changes.onMouseup = /*onMouseup*/ ctx[9];
+    			if (dirty & /*onMouseover*/ 1024) mark_changes.onMouseover = /*onMouseover*/ ctx[10];
+    			if (dirty & /*onMouseout*/ 2048) mark_changes.onMouseout = /*onMouseout*/ ctx[11];
+    			if (dirty & /*onMousedrag*/ 4096) mark_changes.onMousedrag = /*onMousedrag*/ ctx[12];
+    			if (dirty & /*onTouchdown*/ 8192) mark_changes.onTouchdown = /*onTouchdown*/ ctx[13];
+    			if (dirty & /*onTouchup*/ 16384) mark_changes.onTouchup = /*onTouchup*/ ctx[14];
+    			if (dirty & /*onTouchover*/ 32768) mark_changes.onTouchover = /*onTouchover*/ ctx[15];
+    			if (dirty & /*onTouchout*/ 65536) mark_changes.onTouchout = /*onTouchout*/ ctx[16];
+    			if (dirty & /*onTouchdrag*/ 131072) mark_changes.onTouchdrag = /*onTouchdrag*/ ctx[17];
+    			if (dirty & /*onSelect*/ 262144) mark_changes.onSelect = /*onSelect*/ ctx[18];
+    			if (dirty & /*onDeselect*/ 524288) mark_changes.onDeselect = /*onDeselect*/ ctx[19];
+    			if (dirty & /*renderSettings*/ 1048576) mark_changes.renderSettings = /*renderSettings*/ ctx[20];
+    			if (dirty & /*blockReindexing*/ 2097152) mark_changes.blockReindexing = /*blockReindexing*/ ctx[21];
+    			mark.$set(mark_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(mark.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(mark.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(mark, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$3.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$3($$self, $$props, $$invalidate) {
+    	let { x = undefined } = $$props;
+    	let { y = undefined } = $$props;
+    	let { geometry = undefined } = $$props;
+    	let { strokeWidth = undefined } = $$props;
+    	let { stroke = undefined } = $$props;
+    	let { opacity = undefined } = $$props;
+    	let { transition = undefined } = $$props;
+    	let { onClick = undefined } = $$props;
+    	let { onMousedown = undefined } = $$props;
+    	let { onMouseup = undefined } = $$props;
+    	let { onMouseover = undefined } = $$props;
+    	let { onMouseout = undefined } = $$props;
+    	let { onMousedrag = undefined } = $$props;
+    	let { onTouchdown = undefined } = $$props;
+    	let { onTouchup = undefined } = $$props;
+    	let { onTouchover = undefined } = $$props;
+    	let { onTouchout = undefined } = $$props;
+    	let { onTouchdrag = undefined } = $$props;
+    	let { onSelect = undefined } = $$props;
+    	let { onDeselect = undefined } = $$props;
+    	let { renderSettings = undefined } = $$props;
+    	let { blockReindexing = false } = $$props;
+
+    	const writable_props = [
+    		"x",
+    		"y",
+    		"geometry",
+    		"strokeWidth",
+    		"stroke",
+    		"opacity",
+    		"transition",
+    		"onClick",
+    		"onMousedown",
+    		"onMouseup",
+    		"onMouseover",
+    		"onMouseout",
+    		"onMousedrag",
+    		"onTouchdown",
+    		"onTouchup",
+    		"onTouchover",
+    		"onTouchout",
+    		"onTouchdrag",
+    		"onSelect",
+    		"onDeselect",
+    		"renderSettings",
+    		"blockReindexing"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<Line> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("Line", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("strokeWidth" in $$props) $$invalidate(3, strokeWidth = $$props.strokeWidth);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("opacity" in $$props) $$invalidate(5, opacity = $$props.opacity);
+    		if ("transition" in $$props) $$invalidate(6, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(7, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(8, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(9, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(10, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(11, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(12, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(13, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(14, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(15, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(16, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(17, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(18, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(19, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(20, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(21, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Mark,
+    		x,
+    		y,
+    		geometry,
+    		strokeWidth,
+    		stroke,
+    		opacity,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("strokeWidth" in $$props) $$invalidate(3, strokeWidth = $$props.strokeWidth);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("opacity" in $$props) $$invalidate(5, opacity = $$props.opacity);
+    		if ("transition" in $$props) $$invalidate(6, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(7, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(8, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(9, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(10, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(11, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(12, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(13, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(14, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(15, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(16, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(17, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(18, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(19, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(20, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(21, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		x,
+    		y,
+    		geometry,
+    		strokeWidth,
+    		stroke,
+    		opacity,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing
+    	];
+    }
+
+    class Line extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(this, options, instance$3, create_fragment$3, safe_not_equal, {
+    			x: 0,
+    			y: 1,
+    			geometry: 2,
+    			strokeWidth: 3,
+    			stroke: 4,
+    			opacity: 5,
+    			transition: 6,
+    			onClick: 7,
+    			onMousedown: 8,
+    			onMouseup: 9,
+    			onMouseover: 10,
+    			onMouseout: 11,
+    			onMousedrag: 12,
+    			onTouchdown: 13,
+    			onTouchup: 14,
+    			onTouchover: 15,
+    			onTouchout: 16,
+    			onTouchdrag: 17,
+    			onSelect: 18,
+    			onDeselect: 19,
+    			renderSettings: 20,
+    			blockReindexing: 21
+    		});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Line",
+    			options,
+    			id: create_fragment$3.name
+    		});
+    	}
+
+    	get x() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get geometry() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set geometry(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeWidth() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeWidth(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get stroke() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set stroke(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get opacity() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set opacity(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedown() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedown(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseup() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseup(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseover() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseover(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseout() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseout(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedrag() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedrag(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdown() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdown(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchup() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchup(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchover() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchover(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchout() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchout(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdrag() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdrag(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onSelect() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onSelect(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onDeselect() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onDeselect(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get renderSettings() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set renderSettings(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get blockReindexing() {
+    		throw new Error("<Line>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set blockReindexing(value) {
+    		throw new Error("<Line>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* node_modules/@snlab/florence/src/components/Marks/Label/Label.svelte generated by Svelte v3.21.0 */
+
+    function create_fragment$4(ctx) {
+    	let current;
+
+    	const mark = new Mark({
+    			props: {
+    				type: "Label",
+    				x: /*x*/ ctx[0],
+    				y: /*y*/ ctx[1],
+    				geometry: /*geometry*/ ctx[2],
+    				fill: /*fill*/ ctx[3],
+    				stroke: /*stroke*/ ctx[4],
+    				strokeWidth: /*strokeWidth*/ ctx[5],
+    				strokeOpacity: /*strokeOpacity*/ ctx[6],
+    				fillOpacity: /*fillOpacity*/ ctx[7],
+    				opacity: /*opacity*/ ctx[8],
+    				text: /*text*/ ctx[9],
+    				fontFamily: /*fontFamily*/ ctx[10],
+    				fontSize: /*fontSize*/ ctx[11],
+    				fontWeight: /*fontWeight*/ ctx[12],
+    				rotation: /*rotation*/ ctx[13],
+    				anchorPoint: /*anchorPoint*/ ctx[14],
+    				transition: /*transition*/ ctx[15],
+    				onClick: /*onClick*/ ctx[16],
+    				onMousedown: /*onMousedown*/ ctx[17],
+    				onMouseup: /*onMouseup*/ ctx[18],
+    				onMouseover: /*onMouseover*/ ctx[19],
+    				onMouseout: /*onMouseout*/ ctx[20],
+    				onMousedrag: /*onMousedrag*/ ctx[21],
+    				onTouchdown: /*onTouchdown*/ ctx[22],
+    				onTouchup: /*onTouchup*/ ctx[23],
+    				onTouchover: /*onTouchover*/ ctx[24],
+    				onTouchout: /*onTouchout*/ ctx[25],
+    				onTouchdrag: /*onTouchdrag*/ ctx[26],
+    				onSelect: /*onSelect*/ ctx[27],
+    				onDeselect: /*onDeselect*/ ctx[28],
+    				renderSettings: /*renderSettings*/ ctx[29],
+    				blockReindexing: /*blockReindexing*/ ctx[30],
+    				_asPolygon: false
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(mark.$$.fragment);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(mark, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, [dirty]) {
+    			const mark_changes = {};
+    			if (dirty & /*x*/ 1) mark_changes.x = /*x*/ ctx[0];
+    			if (dirty & /*y*/ 2) mark_changes.y = /*y*/ ctx[1];
+    			if (dirty & /*geometry*/ 4) mark_changes.geometry = /*geometry*/ ctx[2];
+    			if (dirty & /*fill*/ 8) mark_changes.fill = /*fill*/ ctx[3];
+    			if (dirty & /*stroke*/ 16) mark_changes.stroke = /*stroke*/ ctx[4];
+    			if (dirty & /*strokeWidth*/ 32) mark_changes.strokeWidth = /*strokeWidth*/ ctx[5];
+    			if (dirty & /*strokeOpacity*/ 64) mark_changes.strokeOpacity = /*strokeOpacity*/ ctx[6];
+    			if (dirty & /*fillOpacity*/ 128) mark_changes.fillOpacity = /*fillOpacity*/ ctx[7];
+    			if (dirty & /*opacity*/ 256) mark_changes.opacity = /*opacity*/ ctx[8];
+    			if (dirty & /*text*/ 512) mark_changes.text = /*text*/ ctx[9];
+    			if (dirty & /*fontFamily*/ 1024) mark_changes.fontFamily = /*fontFamily*/ ctx[10];
+    			if (dirty & /*fontSize*/ 2048) mark_changes.fontSize = /*fontSize*/ ctx[11];
+    			if (dirty & /*fontWeight*/ 4096) mark_changes.fontWeight = /*fontWeight*/ ctx[12];
+    			if (dirty & /*rotation*/ 8192) mark_changes.rotation = /*rotation*/ ctx[13];
+    			if (dirty & /*anchorPoint*/ 16384) mark_changes.anchorPoint = /*anchorPoint*/ ctx[14];
+    			if (dirty & /*transition*/ 32768) mark_changes.transition = /*transition*/ ctx[15];
+    			if (dirty & /*onClick*/ 65536) mark_changes.onClick = /*onClick*/ ctx[16];
+    			if (dirty & /*onMousedown*/ 131072) mark_changes.onMousedown = /*onMousedown*/ ctx[17];
+    			if (dirty & /*onMouseup*/ 262144) mark_changes.onMouseup = /*onMouseup*/ ctx[18];
+    			if (dirty & /*onMouseover*/ 524288) mark_changes.onMouseover = /*onMouseover*/ ctx[19];
+    			if (dirty & /*onMouseout*/ 1048576) mark_changes.onMouseout = /*onMouseout*/ ctx[20];
+    			if (dirty & /*onMousedrag*/ 2097152) mark_changes.onMousedrag = /*onMousedrag*/ ctx[21];
+    			if (dirty & /*onTouchdown*/ 4194304) mark_changes.onTouchdown = /*onTouchdown*/ ctx[22];
+    			if (dirty & /*onTouchup*/ 8388608) mark_changes.onTouchup = /*onTouchup*/ ctx[23];
+    			if (dirty & /*onTouchover*/ 16777216) mark_changes.onTouchover = /*onTouchover*/ ctx[24];
+    			if (dirty & /*onTouchout*/ 33554432) mark_changes.onTouchout = /*onTouchout*/ ctx[25];
+    			if (dirty & /*onTouchdrag*/ 67108864) mark_changes.onTouchdrag = /*onTouchdrag*/ ctx[26];
+    			if (dirty & /*onSelect*/ 134217728) mark_changes.onSelect = /*onSelect*/ ctx[27];
+    			if (dirty & /*onDeselect*/ 268435456) mark_changes.onDeselect = /*onDeselect*/ ctx[28];
+    			if (dirty & /*renderSettings*/ 536870912) mark_changes.renderSettings = /*renderSettings*/ ctx[29];
+    			if (dirty & /*blockReindexing*/ 1073741824) mark_changes.blockReindexing = /*blockReindexing*/ ctx[30];
+    			mark.$set(mark_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(mark.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(mark.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(mark, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$4.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$4($$self, $$props, $$invalidate) {
+    	let { x = undefined } = $$props;
+    	let { y = undefined } = $$props;
+    	let { geometry = undefined } = $$props;
+    	let { fill = undefined } = $$props;
+    	let { stroke = undefined } = $$props;
+    	let { strokeWidth = undefined } = $$props;
+    	let { strokeOpacity = undefined } = $$props;
+    	let { fillOpacity = undefined } = $$props;
+    	let { opacity = undefined } = $$props;
+    	let { text = undefined } = $$props;
+    	let { fontFamily = undefined } = $$props;
+    	let { fontSize = undefined } = $$props;
+    	let { fontWeight = undefined } = $$props;
+    	let { rotation = undefined } = $$props;
+    	let { anchorPoint = undefined } = $$props;
+    	let { transition = undefined } = $$props;
+    	let { onClick = undefined } = $$props;
+    	let { onMousedown = undefined } = $$props;
+    	let { onMouseup = undefined } = $$props;
+    	let { onMouseover = undefined } = $$props;
+    	let { onMouseout = undefined } = $$props;
+    	let { onMousedrag = undefined } = $$props;
+    	let { onTouchdown = undefined } = $$props;
+    	let { onTouchup = undefined } = $$props;
+    	let { onTouchover = undefined } = $$props;
+    	let { onTouchout = undefined } = $$props;
+    	let { onTouchdrag = undefined } = $$props;
+    	let { onSelect = undefined } = $$props;
+    	let { onDeselect = undefined } = $$props;
+    	let { renderSettings = undefined } = $$props;
+    	let { blockReindexing = false } = $$props;
+
+    	const writable_props = [
+    		"x",
+    		"y",
+    		"geometry",
+    		"fill",
+    		"stroke",
+    		"strokeWidth",
+    		"strokeOpacity",
+    		"fillOpacity",
+    		"opacity",
+    		"text",
+    		"fontFamily",
+    		"fontSize",
+    		"fontWeight",
+    		"rotation",
+    		"anchorPoint",
+    		"transition",
+    		"onClick",
+    		"onMousedown",
+    		"onMouseup",
+    		"onMouseover",
+    		"onMouseout",
+    		"onMousedrag",
+    		"onTouchdown",
+    		"onTouchup",
+    		"onTouchover",
+    		"onTouchout",
+    		"onTouchdrag",
+    		"onSelect",
+    		"onDeselect",
+    		"renderSettings",
+    		"blockReindexing"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<Label> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("Label", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("fill" in $$props) $$invalidate(3, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(5, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(6, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(7, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(8, opacity = $$props.opacity);
+    		if ("text" in $$props) $$invalidate(9, text = $$props.text);
+    		if ("fontFamily" in $$props) $$invalidate(10, fontFamily = $$props.fontFamily);
+    		if ("fontSize" in $$props) $$invalidate(11, fontSize = $$props.fontSize);
+    		if ("fontWeight" in $$props) $$invalidate(12, fontWeight = $$props.fontWeight);
+    		if ("rotation" in $$props) $$invalidate(13, rotation = $$props.rotation);
+    		if ("anchorPoint" in $$props) $$invalidate(14, anchorPoint = $$props.anchorPoint);
+    		if ("transition" in $$props) $$invalidate(15, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(16, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(17, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(18, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(19, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(20, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(21, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(22, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(23, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(24, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(25, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(26, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(27, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(28, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(29, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(30, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Mark,
+    		x,
+    		y,
+    		geometry,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontFamily,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("fill" in $$props) $$invalidate(3, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(5, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(6, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(7, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(8, opacity = $$props.opacity);
+    		if ("text" in $$props) $$invalidate(9, text = $$props.text);
+    		if ("fontFamily" in $$props) $$invalidate(10, fontFamily = $$props.fontFamily);
+    		if ("fontSize" in $$props) $$invalidate(11, fontSize = $$props.fontSize);
+    		if ("fontWeight" in $$props) $$invalidate(12, fontWeight = $$props.fontWeight);
+    		if ("rotation" in $$props) $$invalidate(13, rotation = $$props.rotation);
+    		if ("anchorPoint" in $$props) $$invalidate(14, anchorPoint = $$props.anchorPoint);
+    		if ("transition" in $$props) $$invalidate(15, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(16, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(17, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(18, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(19, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(20, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(21, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(22, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(23, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(24, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(25, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(26, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(27, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(28, onDeselect = $$props.onDeselect);
+    		if ("renderSettings" in $$props) $$invalidate(29, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(30, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		x,
+    		y,
+    		geometry,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontFamily,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		renderSettings,
+    		blockReindexing
+    	];
+    }
+
+    class Label extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(this, options, instance$4, create_fragment$4, safe_not_equal, {
+    			x: 0,
+    			y: 1,
+    			geometry: 2,
+    			fill: 3,
+    			stroke: 4,
+    			strokeWidth: 5,
+    			strokeOpacity: 6,
+    			fillOpacity: 7,
+    			opacity: 8,
+    			text: 9,
+    			fontFamily: 10,
+    			fontSize: 11,
+    			fontWeight: 12,
+    			rotation: 13,
+    			anchorPoint: 14,
+    			transition: 15,
+    			onClick: 16,
+    			onMousedown: 17,
+    			onMouseup: 18,
+    			onMouseover: 19,
+    			onMouseout: 20,
+    			onMousedrag: 21,
+    			onTouchdown: 22,
+    			onTouchup: 23,
+    			onTouchover: 24,
+    			onTouchout: 25,
+    			onTouchdrag: 26,
+    			onSelect: 27,
+    			onDeselect: 28,
+    			renderSettings: 29,
+    			blockReindexing: 30
+    		});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Label",
+    			options,
+    			id: create_fragment$4.name
+    		});
+    	}
+
+    	get x() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get geometry() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set geometry(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fill() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fill(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get stroke() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set stroke(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeWidth() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeWidth(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeOpacity() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeOpacity(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fillOpacity() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fillOpacity(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get opacity() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set opacity(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get text() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set text(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontFamily() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontFamily(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontSize() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontSize(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontWeight() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontWeight(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get rotation() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set rotation(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get anchorPoint() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set anchorPoint(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedown() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedown(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseup() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseup(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseover() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseover(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseout() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseout(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedrag() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedrag(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdown() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdown(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchup() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchup(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchover() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchover(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchout() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchout(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdrag() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdrag(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onSelect() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onSelect(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onDeselect() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onDeselect(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get renderSettings() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set renderSettings(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get blockReindexing() {
+    		throw new Error("<Label>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set blockReindexing(value) {
+    		throw new Error("<Label>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
     /**
      * This function is only used when dealing with layers.
      * For layers, most 'aesthetic' props can be specified in two ways:
@@ -13328,7 +16923,7 @@ return d[d.length-1];};return ", funcName].join("");
     /* node_modules/@snlab/florence/src/components/Marks/Mark/Layer.svelte generated by Svelte v3.21.0 */
 
     const { Object: Object_1 } = globals;
-    const file$1 = "node_modules/@snlab/florence/src/components/Marks/Mark/Layer.svelte";
+    const file$2 = "node_modules/@snlab/florence/src/components/Marks/Mark/Layer.svelte";
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
@@ -13355,13 +16950,13 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     // (447:0) {#if $graphicContext.output() === 'svg'}
-    function create_if_block_1$1(ctx) {
+    function create_if_block_1$2(ctx) {
     	let t0;
     	let t1;
     	let if_block2_anchor;
-    	let if_block0 = /*renderPolygon*/ ctx[26] && create_if_block_4(ctx);
-    	let if_block1 = /*renderCircle*/ ctx[27] && create_if_block_3(ctx);
-    	let if_block2 = /*renderLine*/ ctx[28] && create_if_block_2(ctx);
+    	let if_block0 = /*renderPolygon*/ ctx[26] && create_if_block_4$1(ctx);
+    	let if_block1 = /*renderCircle*/ ctx[27] && create_if_block_3$1(ctx);
+    	let if_block2 = /*renderLine*/ ctx[28] && create_if_block_2$1(ctx);
 
     	const block = {
     		c: function create() {
@@ -13385,7 +16980,7 @@ return d[d.length-1];};return ", funcName].join("");
     				if (if_block0) {
     					if_block0.p(ctx, dirty);
     				} else {
-    					if_block0 = create_if_block_4(ctx);
+    					if_block0 = create_if_block_4$1(ctx);
     					if_block0.c();
     					if_block0.m(t0.parentNode, t0);
     				}
@@ -13398,7 +16993,7 @@ return d[d.length-1];};return ", funcName].join("");
     				if (if_block1) {
     					if_block1.p(ctx, dirty);
     				} else {
-    					if_block1 = create_if_block_3(ctx);
+    					if_block1 = create_if_block_3$1(ctx);
     					if_block1.c();
     					if_block1.m(t1.parentNode, t1);
     				}
@@ -13411,7 +17006,7 @@ return d[d.length-1];};return ", funcName].join("");
     				if (if_block2) {
     					if_block2.p(ctx, dirty);
     				} else {
-    					if_block2 = create_if_block_2(ctx);
+    					if_block2 = create_if_block_2$1(ctx);
     					if_block2.c();
     					if_block2.m(if_block2_anchor.parentNode, if_block2_anchor);
     				}
@@ -13432,7 +17027,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_1$1.name,
+    		id: create_if_block_1$2.name,
     		type: "if",
     		source: "(447:0) {#if $graphicContext.output() === 'svg'}",
     		ctx
@@ -13442,7 +17037,7 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     // (449:2) {#if renderPolygon}
-    function create_if_block_4(ctx) {
+    function create_if_block_4$1(ctx) {
     	let g;
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -13467,7 +17062,7 @@ return d[d.length-1];};return ", funcName].join("");
     			}
 
     			attr_dev(g, "class", g_class_value = `${/*type*/ ctx[0].toLowerCase()}-layer`);
-    			add_location(g, file$1, 449, 4, 15742);
+    			add_location(g, file$2, 449, 4, 15742);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, g, anchor);
@@ -13499,7 +17094,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_4.name,
+    		id: create_if_block_4$1.name,
     		type: "if",
     		source: "(449:2) {#if renderPolygon}",
     		ctx
@@ -13533,7 +17128,7 @@ return d[d.length-1];};return ", funcName].join("");
     			attr_dev(path, "fill-opacity", path_fill_opacity_value = /*$tr_fillOpacityObject*/ ctx[21][/*$key*/ ctx[114]]);
     			attr_dev(path, "stroke-opacity", path_stroke_opacity_value = /*$tr_strokeOpacityObject*/ ctx[20][/*$key*/ ctx[114]]);
     			attr_dev(path, "opacity", path_opacity_value = /*$tr_opacityObject*/ ctx[22][/*$key*/ ctx[114]]);
-    			add_location(path, file$1, 452, 8, 15860);
+    			add_location(path, file$2, 452, 8, 15860);
     			this.first = path;
     		},
     		m: function mount(target, anchor) {
@@ -13589,7 +17184,7 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     // (469:2) {#if renderCircle}
-    function create_if_block_3(ctx) {
+    function create_if_block_3$1(ctx) {
     	let g;
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -13613,7 +17208,7 @@ return d[d.length-1];};return ", funcName].join("");
     			}
 
     			attr_dev(g, "class", "point-layer");
-    			add_location(g, file$1, 469, 4, 16319);
+    			add_location(g, file$2, 469, 4, 16319);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, g, anchor);
@@ -13641,7 +17236,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_3.name,
+    		id: create_if_block_3$1.name,
     		type: "if",
     		source: "(469:2) {#if renderCircle}",
     		ctx
@@ -13678,7 +17273,7 @@ return d[d.length-1];};return ", funcName].join("");
     			attr_dev(circle, "fill-opacity", circle_fill_opacity_value = /*$tr_fillOpacityObject*/ ctx[21][/*$key*/ ctx[114]]);
     			attr_dev(circle, "stroke-opacity", circle_stroke_opacity_value = /*$tr_strokeOpacityObject*/ ctx[20][/*$key*/ ctx[114]]);
     			attr_dev(circle, "opacity", circle_opacity_value = /*$tr_opacityObject*/ ctx[22][/*$key*/ ctx[114]]);
-    			add_location(circle, file$1, 472, 8, 16419);
+    			add_location(circle, file$2, 472, 8, 16419);
     			this.first = circle;
     		},
     		m: function mount(target, anchor) {
@@ -13738,7 +17333,7 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     // (490:2) {#if renderLine}
-    function create_if_block_2(ctx) {
+    function create_if_block_2$1(ctx) {
     	let g;
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -13762,7 +17357,7 @@ return d[d.length-1];};return ", funcName].join("");
     			}
 
     			attr_dev(g, "class", "line-layer");
-    			add_location(g, file$1, 490, 4, 16964);
+    			add_location(g, file$2, 490, 4, 16964);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, g, anchor);
@@ -13790,7 +17385,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_2.name,
+    		id: create_if_block_2$1.name,
     		type: "if",
     		source: "(490:2) {#if renderLine}",
     		ctx
@@ -13818,7 +17413,7 @@ return d[d.length-1];};return ", funcName].join("");
     			attr_dev(path, "stroke-width", path_stroke_width_value = /*$tr_strokeWidthObject*/ ctx[19][/*$key*/ ctx[114]]);
     			attr_dev(path, "stroke", path_stroke_value = /*$tr_strokeObject*/ ctx[18][/*$key*/ ctx[114]]);
     			attr_dev(path, "style", path_style_value = `opacity: ${/*$tr_opacityObject*/ ctx[22][/*$key*/ ctx[114]]}`);
-    			add_location(path, file$1, 493, 8, 17063);
+    			add_location(path, file$2, 493, 8, 17063);
     			this.first = path;
     		},
     		m: function mount(target, anchor) {
@@ -13858,7 +17453,7 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     // (509:0) {#if renderLabel}
-    function create_if_block$1(ctx) {
+    function create_if_block$2(ctx) {
     	let g;
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -13882,7 +17477,7 @@ return d[d.length-1];};return ", funcName].join("");
     			}
 
     			attr_dev(g, "class", "label-layer");
-    			add_location(g, file$1, 509, 2, 17395);
+    			add_location(g, file$2, 509, 2, 17395);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, g, anchor);
@@ -13910,7 +17505,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block$1.name,
+    		id: create_if_block$2.name,
     		type: "if",
     		source: "(509:0) {#if renderLabel}",
     		ctx
@@ -13966,7 +17561,7 @@ return d[d.length-1];};return ", funcName].join("");
     			attr_dev(text_1, "font-weight", text_1_font_weight_value = /*$tr_fontWeightObject*/ ctx[24][/*$key*/ ctx[114]]);
     			attr_dev(text_1, "text-anchor", text_1_text_anchor_value = textAnchorPoint(/*anchorPointObject*/ ctx[3][/*$key*/ ctx[114]]).textAnchor);
     			attr_dev(text_1, "dominant-baseline", text_1_dominant_baseline_value = textAnchorPoint(/*anchorPointObject*/ ctx[3][/*$key*/ ctx[114]]).dominantBaseline);
-    			add_location(text_1, file$1, 512, 6, 17491);
+    			add_location(text_1, file$2, 512, 6, 17491);
     			this.first = text_1;
     		},
     		m: function mount(target, anchor) {
@@ -14052,12 +17647,12 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function create_fragment$1(ctx) {
+    function create_fragment$5(ctx) {
     	let show_if = /*$graphicContext*/ ctx[30].output() === "svg";
     	let t;
     	let if_block1_anchor;
-    	let if_block0 = show_if && create_if_block_1$1(ctx);
-    	let if_block1 = /*renderLabel*/ ctx[29] && create_if_block$1(ctx);
+    	let if_block0 = show_if && create_if_block_1$2(ctx);
+    	let if_block1 = /*renderLabel*/ ctx[29] && create_if_block$2(ctx);
 
     	const block = {
     		c: function create() {
@@ -14082,7 +17677,7 @@ return d[d.length-1];};return ", funcName].join("");
     				if (if_block0) {
     					if_block0.p(ctx, dirty);
     				} else {
-    					if_block0 = create_if_block_1$1(ctx);
+    					if_block0 = create_if_block_1$2(ctx);
     					if_block0.c();
     					if_block0.m(t.parentNode, t);
     				}
@@ -14095,7 +17690,7 @@ return d[d.length-1];};return ", funcName].join("");
     				if (if_block1) {
     					if_block1.p(ctx, dirty);
     				} else {
-    					if_block1 = create_if_block$1(ctx);
+    					if_block1 = create_if_block$2(ctx);
     					if_block1.c();
     					if_block1.m(if_block1_anchor.parentNode, if_block1_anchor);
     				}
@@ -14116,7 +17711,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$1.name,
+    		id: create_fragment$5.name,
     		type: "component",
     		source: "",
     		ctx
@@ -14125,13 +17720,13 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    let idCounter$1 = 0;
+    let idCounter$2 = 0;
 
-    function getId$1() {
-    	return "layer" + idCounter$1++;
+    function getId$2() {
+    	return "layer" + idCounter$2++;
     }
 
-    function instance$1($$self, $$props, $$invalidate) {
+    function instance$5($$self, $$props, $$invalidate) {
     	let $sectionContext;
 
     	let $tr_screenGeometryObject,
@@ -14191,7 +17786,7 @@ return d[d.length-1];};return ", funcName].join("");
     	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_fontSizeObject());
     	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_fontWeightObject());
     	$$self.$$.on_destroy.push(() => $$unsubscribe_tr_rotationObject());
-    	const layerId = getId$1();
+    	const layerId = getId$2();
     	let initPhase = true;
     	const initDone = () => !initPhase;
     	let { type } = $$props;
@@ -14599,8 +18194,8 @@ return d[d.length-1];};return ", funcName].join("");
     	};
 
     	$$self.$capture_state = () => ({
-    		idCounter: idCounter$1,
-    		getId: getId$1,
+    		idCounter: idCounter$2,
+    		getId: getId$2,
     		beforeUpdate,
     		afterUpdate,
     		onMount,
@@ -15128,8 +18723,8 @@ return d[d.length-1];};return ", funcName].join("");
     		init(
     			this,
     			options,
-    			instance$1,
-    			create_fragment$1,
+    			instance$5,
+    			create_fragment$5,
     			safe_not_equal,
     			{
     				type: 0,
@@ -15182,7 +18777,7 @@ return d[d.length-1];};return ", funcName].join("");
     			component: this,
     			tagName: "Layer",
     			options,
-    			id: create_fragment$1.name
+    			id: create_fragment$5.name
     		});
 
     		const { ctx } = this.$$;
@@ -15532,7 +19127,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     /* node_modules/@snlab/florence/src/components/Marks/Polygon/PolygonLayer.svelte generated by Svelte v3.21.0 */
 
-    function create_fragment$2(ctx) {
+    function create_fragment$6(ctx) {
     	let current;
 
     	const layer = new Layer({
@@ -15626,7 +19221,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$2.name,
+    		id: create_fragment$6.name,
     		type: "component",
     		source: "",
     		ctx
@@ -15635,7 +19230,7 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function instance$2($$self, $$props, $$invalidate) {
+    function instance$6($$self, $$props, $$invalidate) {
     	let { x = undefined } = $$props;
     	let { y = undefined } = $$props;
     	let { geometry = undefined } = $$props;
@@ -15825,7 +19420,7 @@ return d[d.length-1];};return ", funcName].join("");
     	constructor(options) {
     		super(options);
 
-    		init(this, options, instance$2, create_fragment$2, safe_not_equal, {
+    		init(this, options, instance$6, create_fragment$6, safe_not_equal, {
     			x: 0,
     			y: 1,
     			geometry: 2,
@@ -15858,7 +19453,7 @@ return d[d.length-1];};return ", funcName].join("");
     			component: this,
     			tagName: "PolygonLayer",
     			options,
-    			id: create_fragment$2.name
+    			id: create_fragment$6.name
     		});
     	}
 
@@ -16071,6 +19666,3740 @@ return d[d.length-1];};return ", funcName].join("");
     	}
     }
 
+    /* node_modules/@snlab/florence/src/components/Marks/Line/LineLayer.svelte generated by Svelte v3.21.0 */
+
+    function create_fragment$7(ctx) {
+    	let current;
+
+    	const layer = new Layer({
+    			props: {
+    				type: "Line",
+    				x: /*x*/ ctx[0],
+    				y: /*y*/ ctx[1],
+    				geometry: /*geometry*/ ctx[2],
+    				strokeWidth: /*strokeWidth*/ ctx[3],
+    				stroke: /*stroke*/ ctx[4],
+    				opacity: /*opacity*/ ctx[5],
+    				transition: /*transition*/ ctx[6],
+    				onClick: /*onClick*/ ctx[7],
+    				onMousedown: /*onMousedown*/ ctx[8],
+    				onMouseup: /*onMouseup*/ ctx[9],
+    				onMouseover: /*onMouseover*/ ctx[10],
+    				onMouseout: /*onMouseout*/ ctx[11],
+    				onMousedrag: /*onMousedrag*/ ctx[12],
+    				onTouchdown: /*onTouchdown*/ ctx[13],
+    				onTouchup: /*onTouchup*/ ctx[14],
+    				onTouchover: /*onTouchover*/ ctx[15],
+    				onTouchout: /*onTouchout*/ ctx[16],
+    				onTouchdrag: /*onTouchdrag*/ ctx[17],
+    				onSelect: /*onSelect*/ ctx[18],
+    				onDeselect: /*onDeselect*/ ctx[19],
+    				key: /*key*/ ctx[20],
+    				renderSettings: /*renderSettings*/ ctx[21],
+    				blockReindexing: /*blockReindexing*/ ctx[22],
+    				_asPolygon: false
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(layer.$$.fragment);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(layer, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, [dirty]) {
+    			const layer_changes = {};
+    			if (dirty & /*x*/ 1) layer_changes.x = /*x*/ ctx[0];
+    			if (dirty & /*y*/ 2) layer_changes.y = /*y*/ ctx[1];
+    			if (dirty & /*geometry*/ 4) layer_changes.geometry = /*geometry*/ ctx[2];
+    			if (dirty & /*strokeWidth*/ 8) layer_changes.strokeWidth = /*strokeWidth*/ ctx[3];
+    			if (dirty & /*stroke*/ 16) layer_changes.stroke = /*stroke*/ ctx[4];
+    			if (dirty & /*opacity*/ 32) layer_changes.opacity = /*opacity*/ ctx[5];
+    			if (dirty & /*transition*/ 64) layer_changes.transition = /*transition*/ ctx[6];
+    			if (dirty & /*onClick*/ 128) layer_changes.onClick = /*onClick*/ ctx[7];
+    			if (dirty & /*onMousedown*/ 256) layer_changes.onMousedown = /*onMousedown*/ ctx[8];
+    			if (dirty & /*onMouseup*/ 512) layer_changes.onMouseup = /*onMouseup*/ ctx[9];
+    			if (dirty & /*onMouseover*/ 1024) layer_changes.onMouseover = /*onMouseover*/ ctx[10];
+    			if (dirty & /*onMouseout*/ 2048) layer_changes.onMouseout = /*onMouseout*/ ctx[11];
+    			if (dirty & /*onMousedrag*/ 4096) layer_changes.onMousedrag = /*onMousedrag*/ ctx[12];
+    			if (dirty & /*onTouchdown*/ 8192) layer_changes.onTouchdown = /*onTouchdown*/ ctx[13];
+    			if (dirty & /*onTouchup*/ 16384) layer_changes.onTouchup = /*onTouchup*/ ctx[14];
+    			if (dirty & /*onTouchover*/ 32768) layer_changes.onTouchover = /*onTouchover*/ ctx[15];
+    			if (dirty & /*onTouchout*/ 65536) layer_changes.onTouchout = /*onTouchout*/ ctx[16];
+    			if (dirty & /*onTouchdrag*/ 131072) layer_changes.onTouchdrag = /*onTouchdrag*/ ctx[17];
+    			if (dirty & /*onSelect*/ 262144) layer_changes.onSelect = /*onSelect*/ ctx[18];
+    			if (dirty & /*onDeselect*/ 524288) layer_changes.onDeselect = /*onDeselect*/ ctx[19];
+    			if (dirty & /*key*/ 1048576) layer_changes.key = /*key*/ ctx[20];
+    			if (dirty & /*renderSettings*/ 2097152) layer_changes.renderSettings = /*renderSettings*/ ctx[21];
+    			if (dirty & /*blockReindexing*/ 4194304) layer_changes.blockReindexing = /*blockReindexing*/ ctx[22];
+    			layer.$set(layer_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(layer.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(layer.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(layer, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$7.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$7($$self, $$props, $$invalidate) {
+    	let { x = undefined } = $$props;
+    	let { y = undefined } = $$props;
+    	let { geometry = undefined } = $$props;
+    	let { strokeWidth = undefined } = $$props;
+    	let { stroke = undefined } = $$props;
+    	let { opacity = undefined } = $$props;
+    	let { transition = undefined } = $$props;
+    	let { onClick = undefined } = $$props;
+    	let { onMousedown = undefined } = $$props;
+    	let { onMouseup = undefined } = $$props;
+    	let { onMouseover = undefined } = $$props;
+    	let { onMouseout = undefined } = $$props;
+    	let { onMousedrag = undefined } = $$props;
+    	let { onTouchdown = undefined } = $$props;
+    	let { onTouchup = undefined } = $$props;
+    	let { onTouchover = undefined } = $$props;
+    	let { onTouchout = undefined } = $$props;
+    	let { onTouchdrag = undefined } = $$props;
+    	let { onSelect = undefined } = $$props;
+    	let { onDeselect = undefined } = $$props;
+    	let { key = undefined } = $$props;
+    	let { renderSettings = undefined } = $$props;
+    	let { blockReindexing = false } = $$props;
+
+    	const writable_props = [
+    		"x",
+    		"y",
+    		"geometry",
+    		"strokeWidth",
+    		"stroke",
+    		"opacity",
+    		"transition",
+    		"onClick",
+    		"onMousedown",
+    		"onMouseup",
+    		"onMouseover",
+    		"onMouseout",
+    		"onMousedrag",
+    		"onTouchdown",
+    		"onTouchup",
+    		"onTouchover",
+    		"onTouchout",
+    		"onTouchdrag",
+    		"onSelect",
+    		"onDeselect",
+    		"key",
+    		"renderSettings",
+    		"blockReindexing"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<LineLayer> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("LineLayer", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("strokeWidth" in $$props) $$invalidate(3, strokeWidth = $$props.strokeWidth);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("opacity" in $$props) $$invalidate(5, opacity = $$props.opacity);
+    		if ("transition" in $$props) $$invalidate(6, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(7, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(8, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(9, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(10, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(11, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(12, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(13, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(14, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(15, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(16, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(17, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(18, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(19, onDeselect = $$props.onDeselect);
+    		if ("key" in $$props) $$invalidate(20, key = $$props.key);
+    		if ("renderSettings" in $$props) $$invalidate(21, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(22, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Layer,
+    		x,
+    		y,
+    		geometry,
+    		strokeWidth,
+    		stroke,
+    		opacity,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		key,
+    		renderSettings,
+    		blockReindexing
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("strokeWidth" in $$props) $$invalidate(3, strokeWidth = $$props.strokeWidth);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("opacity" in $$props) $$invalidate(5, opacity = $$props.opacity);
+    		if ("transition" in $$props) $$invalidate(6, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(7, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(8, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(9, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(10, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(11, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(12, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(13, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(14, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(15, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(16, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(17, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(18, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(19, onDeselect = $$props.onDeselect);
+    		if ("key" in $$props) $$invalidate(20, key = $$props.key);
+    		if ("renderSettings" in $$props) $$invalidate(21, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(22, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		x,
+    		y,
+    		geometry,
+    		strokeWidth,
+    		stroke,
+    		opacity,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		key,
+    		renderSettings,
+    		blockReindexing
+    	];
+    }
+
+    class LineLayer extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(this, options, instance$7, create_fragment$7, safe_not_equal, {
+    			x: 0,
+    			y: 1,
+    			geometry: 2,
+    			strokeWidth: 3,
+    			stroke: 4,
+    			opacity: 5,
+    			transition: 6,
+    			onClick: 7,
+    			onMousedown: 8,
+    			onMouseup: 9,
+    			onMouseover: 10,
+    			onMouseout: 11,
+    			onMousedrag: 12,
+    			onTouchdown: 13,
+    			onTouchup: 14,
+    			onTouchover: 15,
+    			onTouchout: 16,
+    			onTouchdrag: 17,
+    			onSelect: 18,
+    			onDeselect: 19,
+    			key: 20,
+    			renderSettings: 21,
+    			blockReindexing: 22
+    		});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "LineLayer",
+    			options,
+    			id: create_fragment$7.name
+    		});
+    	}
+
+    	get x() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get geometry() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set geometry(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeWidth() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeWidth(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get stroke() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set stroke(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get opacity() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set opacity(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedown() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedown(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseup() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseup(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseover() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseover(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseout() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseout(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedrag() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedrag(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdown() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdown(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchup() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchup(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchover() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchover(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchout() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchout(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdrag() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdrag(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onSelect() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onSelect(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onDeselect() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onDeselect(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get key() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set key(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get renderSettings() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set renderSettings(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get blockReindexing() {
+    		throw new Error("<LineLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set blockReindexing(value) {
+    		throw new Error("<LineLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* node_modules/@snlab/florence/src/components/Marks/Label/LabelLayer.svelte generated by Svelte v3.21.0 */
+
+    function create_fragment$8(ctx) {
+    	let current;
+
+    	const layer = new Layer({
+    			props: {
+    				type: "Label",
+    				x: /*x*/ ctx[0],
+    				y: /*y*/ ctx[1],
+    				geometry: /*geometry*/ ctx[2],
+    				fill: /*fill*/ ctx[3],
+    				stroke: /*stroke*/ ctx[4],
+    				strokeWidth: /*strokeWidth*/ ctx[5],
+    				strokeOpacity: /*strokeOpacity*/ ctx[6],
+    				fillOpacity: /*fillOpacity*/ ctx[7],
+    				opacity: /*opacity*/ ctx[8],
+    				text: /*text*/ ctx[9],
+    				fontFamily: /*fontFamily*/ ctx[10],
+    				fontSize: /*fontSize*/ ctx[11],
+    				fontWeight: /*fontWeight*/ ctx[12],
+    				rotation: /*rotation*/ ctx[13],
+    				anchorPoint: /*anchorPoint*/ ctx[14],
+    				transition: /*transition*/ ctx[15],
+    				onClick: /*onClick*/ ctx[16],
+    				onMousedown: /*onMousedown*/ ctx[17],
+    				onMouseup: /*onMouseup*/ ctx[18],
+    				onMouseover: /*onMouseover*/ ctx[19],
+    				onMouseout: /*onMouseout*/ ctx[20],
+    				onMousedrag: /*onMousedrag*/ ctx[21],
+    				onTouchdown: /*onTouchdown*/ ctx[22],
+    				onTouchup: /*onTouchup*/ ctx[23],
+    				onTouchover: /*onTouchover*/ ctx[24],
+    				onTouchout: /*onTouchout*/ ctx[25],
+    				onTouchdrag: /*onTouchdrag*/ ctx[26],
+    				onSelect: /*onSelect*/ ctx[27],
+    				onDeselect: /*onDeselect*/ ctx[28],
+    				key: /*key*/ ctx[29],
+    				renderSettings: /*renderSettings*/ ctx[30],
+    				blockReindexing: /*blockReindexing*/ ctx[31],
+    				_asPolygon: false
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(layer.$$.fragment);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(layer, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const layer_changes = {};
+    			if (dirty[0] & /*x*/ 1) layer_changes.x = /*x*/ ctx[0];
+    			if (dirty[0] & /*y*/ 2) layer_changes.y = /*y*/ ctx[1];
+    			if (dirty[0] & /*geometry*/ 4) layer_changes.geometry = /*geometry*/ ctx[2];
+    			if (dirty[0] & /*fill*/ 8) layer_changes.fill = /*fill*/ ctx[3];
+    			if (dirty[0] & /*stroke*/ 16) layer_changes.stroke = /*stroke*/ ctx[4];
+    			if (dirty[0] & /*strokeWidth*/ 32) layer_changes.strokeWidth = /*strokeWidth*/ ctx[5];
+    			if (dirty[0] & /*strokeOpacity*/ 64) layer_changes.strokeOpacity = /*strokeOpacity*/ ctx[6];
+    			if (dirty[0] & /*fillOpacity*/ 128) layer_changes.fillOpacity = /*fillOpacity*/ ctx[7];
+    			if (dirty[0] & /*opacity*/ 256) layer_changes.opacity = /*opacity*/ ctx[8];
+    			if (dirty[0] & /*text*/ 512) layer_changes.text = /*text*/ ctx[9];
+    			if (dirty[0] & /*fontFamily*/ 1024) layer_changes.fontFamily = /*fontFamily*/ ctx[10];
+    			if (dirty[0] & /*fontSize*/ 2048) layer_changes.fontSize = /*fontSize*/ ctx[11];
+    			if (dirty[0] & /*fontWeight*/ 4096) layer_changes.fontWeight = /*fontWeight*/ ctx[12];
+    			if (dirty[0] & /*rotation*/ 8192) layer_changes.rotation = /*rotation*/ ctx[13];
+    			if (dirty[0] & /*anchorPoint*/ 16384) layer_changes.anchorPoint = /*anchorPoint*/ ctx[14];
+    			if (dirty[0] & /*transition*/ 32768) layer_changes.transition = /*transition*/ ctx[15];
+    			if (dirty[0] & /*onClick*/ 65536) layer_changes.onClick = /*onClick*/ ctx[16];
+    			if (dirty[0] & /*onMousedown*/ 131072) layer_changes.onMousedown = /*onMousedown*/ ctx[17];
+    			if (dirty[0] & /*onMouseup*/ 262144) layer_changes.onMouseup = /*onMouseup*/ ctx[18];
+    			if (dirty[0] & /*onMouseover*/ 524288) layer_changes.onMouseover = /*onMouseover*/ ctx[19];
+    			if (dirty[0] & /*onMouseout*/ 1048576) layer_changes.onMouseout = /*onMouseout*/ ctx[20];
+    			if (dirty[0] & /*onMousedrag*/ 2097152) layer_changes.onMousedrag = /*onMousedrag*/ ctx[21];
+    			if (dirty[0] & /*onTouchdown*/ 4194304) layer_changes.onTouchdown = /*onTouchdown*/ ctx[22];
+    			if (dirty[0] & /*onTouchup*/ 8388608) layer_changes.onTouchup = /*onTouchup*/ ctx[23];
+    			if (dirty[0] & /*onTouchover*/ 16777216) layer_changes.onTouchover = /*onTouchover*/ ctx[24];
+    			if (dirty[0] & /*onTouchout*/ 33554432) layer_changes.onTouchout = /*onTouchout*/ ctx[25];
+    			if (dirty[0] & /*onTouchdrag*/ 67108864) layer_changes.onTouchdrag = /*onTouchdrag*/ ctx[26];
+    			if (dirty[0] & /*onSelect*/ 134217728) layer_changes.onSelect = /*onSelect*/ ctx[27];
+    			if (dirty[0] & /*onDeselect*/ 268435456) layer_changes.onDeselect = /*onDeselect*/ ctx[28];
+    			if (dirty[0] & /*key*/ 536870912) layer_changes.key = /*key*/ ctx[29];
+    			if (dirty[0] & /*renderSettings*/ 1073741824) layer_changes.renderSettings = /*renderSettings*/ ctx[30];
+    			if (dirty[1] & /*blockReindexing*/ 1) layer_changes.blockReindexing = /*blockReindexing*/ ctx[31];
+    			layer.$set(layer_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(layer.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(layer.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(layer, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$8.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$8($$self, $$props, $$invalidate) {
+    	let { x = undefined } = $$props;
+    	let { y = undefined } = $$props;
+    	let { geometry = undefined } = $$props;
+    	let { fill = undefined } = $$props;
+    	let { stroke = undefined } = $$props;
+    	let { strokeWidth = undefined } = $$props;
+    	let { strokeOpacity = undefined } = $$props;
+    	let { fillOpacity = undefined } = $$props;
+    	let { opacity = undefined } = $$props;
+    	let { text = undefined } = $$props;
+    	let { fontFamily = undefined } = $$props;
+    	let { fontSize = undefined } = $$props;
+    	let { fontWeight = undefined } = $$props;
+    	let { rotation = undefined } = $$props;
+    	let { anchorPoint = undefined } = $$props;
+    	let { transition = undefined } = $$props;
+    	let { onClick = undefined } = $$props;
+    	let { onMousedown = undefined } = $$props;
+    	let { onMouseup = undefined } = $$props;
+    	let { onMouseover = undefined } = $$props;
+    	let { onMouseout = undefined } = $$props;
+    	let { onMousedrag = undefined } = $$props;
+    	let { onTouchdown = undefined } = $$props;
+    	let { onTouchup = undefined } = $$props;
+    	let { onTouchover = undefined } = $$props;
+    	let { onTouchout = undefined } = $$props;
+    	let { onTouchdrag = undefined } = $$props;
+    	let { onSelect = undefined } = $$props;
+    	let { onDeselect = undefined } = $$props;
+    	let { key = undefined } = $$props;
+    	let { renderSettings = undefined } = $$props;
+    	let { blockReindexing = false } = $$props;
+
+    	const writable_props = [
+    		"x",
+    		"y",
+    		"geometry",
+    		"fill",
+    		"stroke",
+    		"strokeWidth",
+    		"strokeOpacity",
+    		"fillOpacity",
+    		"opacity",
+    		"text",
+    		"fontFamily",
+    		"fontSize",
+    		"fontWeight",
+    		"rotation",
+    		"anchorPoint",
+    		"transition",
+    		"onClick",
+    		"onMousedown",
+    		"onMouseup",
+    		"onMouseover",
+    		"onMouseout",
+    		"onMousedrag",
+    		"onTouchdown",
+    		"onTouchup",
+    		"onTouchover",
+    		"onTouchout",
+    		"onTouchdrag",
+    		"onSelect",
+    		"onDeselect",
+    		"key",
+    		"renderSettings",
+    		"blockReindexing"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<LabelLayer> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("LabelLayer", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("fill" in $$props) $$invalidate(3, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(5, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(6, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(7, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(8, opacity = $$props.opacity);
+    		if ("text" in $$props) $$invalidate(9, text = $$props.text);
+    		if ("fontFamily" in $$props) $$invalidate(10, fontFamily = $$props.fontFamily);
+    		if ("fontSize" in $$props) $$invalidate(11, fontSize = $$props.fontSize);
+    		if ("fontWeight" in $$props) $$invalidate(12, fontWeight = $$props.fontWeight);
+    		if ("rotation" in $$props) $$invalidate(13, rotation = $$props.rotation);
+    		if ("anchorPoint" in $$props) $$invalidate(14, anchorPoint = $$props.anchorPoint);
+    		if ("transition" in $$props) $$invalidate(15, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(16, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(17, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(18, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(19, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(20, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(21, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(22, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(23, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(24, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(25, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(26, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(27, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(28, onDeselect = $$props.onDeselect);
+    		if ("key" in $$props) $$invalidate(29, key = $$props.key);
+    		if ("renderSettings" in $$props) $$invalidate(30, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(31, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Layer,
+    		x,
+    		y,
+    		geometry,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontFamily,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		key,
+    		renderSettings,
+    		blockReindexing
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("x" in $$props) $$invalidate(0, x = $$props.x);
+    		if ("y" in $$props) $$invalidate(1, y = $$props.y);
+    		if ("geometry" in $$props) $$invalidate(2, geometry = $$props.geometry);
+    		if ("fill" in $$props) $$invalidate(3, fill = $$props.fill);
+    		if ("stroke" in $$props) $$invalidate(4, stroke = $$props.stroke);
+    		if ("strokeWidth" in $$props) $$invalidate(5, strokeWidth = $$props.strokeWidth);
+    		if ("strokeOpacity" in $$props) $$invalidate(6, strokeOpacity = $$props.strokeOpacity);
+    		if ("fillOpacity" in $$props) $$invalidate(7, fillOpacity = $$props.fillOpacity);
+    		if ("opacity" in $$props) $$invalidate(8, opacity = $$props.opacity);
+    		if ("text" in $$props) $$invalidate(9, text = $$props.text);
+    		if ("fontFamily" in $$props) $$invalidate(10, fontFamily = $$props.fontFamily);
+    		if ("fontSize" in $$props) $$invalidate(11, fontSize = $$props.fontSize);
+    		if ("fontWeight" in $$props) $$invalidate(12, fontWeight = $$props.fontWeight);
+    		if ("rotation" in $$props) $$invalidate(13, rotation = $$props.rotation);
+    		if ("anchorPoint" in $$props) $$invalidate(14, anchorPoint = $$props.anchorPoint);
+    		if ("transition" in $$props) $$invalidate(15, transition = $$props.transition);
+    		if ("onClick" in $$props) $$invalidate(16, onClick = $$props.onClick);
+    		if ("onMousedown" in $$props) $$invalidate(17, onMousedown = $$props.onMousedown);
+    		if ("onMouseup" in $$props) $$invalidate(18, onMouseup = $$props.onMouseup);
+    		if ("onMouseover" in $$props) $$invalidate(19, onMouseover = $$props.onMouseover);
+    		if ("onMouseout" in $$props) $$invalidate(20, onMouseout = $$props.onMouseout);
+    		if ("onMousedrag" in $$props) $$invalidate(21, onMousedrag = $$props.onMousedrag);
+    		if ("onTouchdown" in $$props) $$invalidate(22, onTouchdown = $$props.onTouchdown);
+    		if ("onTouchup" in $$props) $$invalidate(23, onTouchup = $$props.onTouchup);
+    		if ("onTouchover" in $$props) $$invalidate(24, onTouchover = $$props.onTouchover);
+    		if ("onTouchout" in $$props) $$invalidate(25, onTouchout = $$props.onTouchout);
+    		if ("onTouchdrag" in $$props) $$invalidate(26, onTouchdrag = $$props.onTouchdrag);
+    		if ("onSelect" in $$props) $$invalidate(27, onSelect = $$props.onSelect);
+    		if ("onDeselect" in $$props) $$invalidate(28, onDeselect = $$props.onDeselect);
+    		if ("key" in $$props) $$invalidate(29, key = $$props.key);
+    		if ("renderSettings" in $$props) $$invalidate(30, renderSettings = $$props.renderSettings);
+    		if ("blockReindexing" in $$props) $$invalidate(31, blockReindexing = $$props.blockReindexing);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		x,
+    		y,
+    		geometry,
+    		fill,
+    		stroke,
+    		strokeWidth,
+    		strokeOpacity,
+    		fillOpacity,
+    		opacity,
+    		text,
+    		fontFamily,
+    		fontSize,
+    		fontWeight,
+    		rotation,
+    		anchorPoint,
+    		transition,
+    		onClick,
+    		onMousedown,
+    		onMouseup,
+    		onMouseover,
+    		onMouseout,
+    		onMousedrag,
+    		onTouchdown,
+    		onTouchup,
+    		onTouchover,
+    		onTouchout,
+    		onTouchdrag,
+    		onSelect,
+    		onDeselect,
+    		key,
+    		renderSettings,
+    		blockReindexing
+    	];
+    }
+
+    class LabelLayer extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(
+    			this,
+    			options,
+    			instance$8,
+    			create_fragment$8,
+    			safe_not_equal,
+    			{
+    				x: 0,
+    				y: 1,
+    				geometry: 2,
+    				fill: 3,
+    				stroke: 4,
+    				strokeWidth: 5,
+    				strokeOpacity: 6,
+    				fillOpacity: 7,
+    				opacity: 8,
+    				text: 9,
+    				fontFamily: 10,
+    				fontSize: 11,
+    				fontWeight: 12,
+    				rotation: 13,
+    				anchorPoint: 14,
+    				transition: 15,
+    				onClick: 16,
+    				onMousedown: 17,
+    				onMouseup: 18,
+    				onMouseover: 19,
+    				onMouseout: 20,
+    				onMousedrag: 21,
+    				onTouchdown: 22,
+    				onTouchup: 23,
+    				onTouchover: 24,
+    				onTouchout: 25,
+    				onTouchdrag: 26,
+    				onSelect: 27,
+    				onDeselect: 28,
+    				key: 29,
+    				renderSettings: 30,
+    				blockReindexing: 31
+    			},
+    			[-1, -1]
+    		);
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "LabelLayer",
+    			options,
+    			id: create_fragment$8.name
+    		});
+    	}
+
+    	get x() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set x(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get y() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set y(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get geometry() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set geometry(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fill() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fill(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get stroke() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set stroke(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeWidth() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeWidth(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get strokeOpacity() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set strokeOpacity(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fillOpacity() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fillOpacity(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get opacity() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set opacity(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get text() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set text(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontFamily() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontFamily(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontSize() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontSize(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get fontWeight() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set fontWeight(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get rotation() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set rotation(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get anchorPoint() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set anchorPoint(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedown() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedown(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseup() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseup(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseover() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseover(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMouseout() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMouseout(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onMousedrag() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onMousedrag(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdown() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdown(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchup() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchup(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchover() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchover(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchout() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchout(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onTouchdrag() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onTouchdrag(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onSelect() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onSelect(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onDeselect() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onDeselect(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get key() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set key(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get renderSettings() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set renderSettings(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get blockReindexing() {
+    		throw new Error("<LabelLayer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set blockReindexing(value) {
+    		throw new Error("<LabelLayer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    function getAbsoluteXPosition (hjust, xOffset, { paddedBbox }) {
+      const { minX: x1, maxX: x2 } = paddedBbox;
+
+      if (hjust === 'left') {
+        return x1 - xOffset
+      }
+
+      if (hjust === 'right') {
+        return x2 + xOffset
+      }
+
+      if (['center', 'centre'].includes(hjust)) {
+        return (x2 - x1) / 2 + x1 + xOffset
+      }
+
+      if (hjust.constructor === Number) {
+        return (x2 - x1) * hjust + x1
+      }
+    }
+
+    function getAbsoluteYPosition (vjust, yOffset, { paddedBbox }) {
+      const { minY: y1, maxY: y2 } = paddedBbox;
+
+      if (vjust === 'top') {
+        return y1 - yOffset
+      }
+
+      if (vjust === 'bottom') {
+        return y2 + yOffset
+      }
+
+      if (['center', 'centre'].includes(vjust)) {
+        return (y2 - y1) / 2 + y1 + yOffset
+      }
+
+      if (vjust.constructor === Number) {
+        return (y2 - y1) * vjust + y1
+      }
+    }
+
+    function getBaseLineCoordinatesXAxis (yAbsolute, sectionContext) {
+      const { paddedBbox, finalScaleX, finalScaleY } = sectionContext;
+      const { minX: x1, maxX: x2 } = paddedBbox;
+
+      const x = [x1, x2].map(finalScaleX.invert);
+      const y = [yAbsolute, yAbsolute].map(finalScaleY.invert);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getBaseLineCoordinatesYAxis (xAbsolute, sectionContext) {
+      const { paddedBbox, finalScaleX, finalScaleY } = sectionContext;
+      const { minY: y1, maxY: y2 } = paddedBbox;
+
+      const x = [xAbsolute, xAbsolute].map(finalScaleX.invert);
+      const y = [y1, y2].map(finalScaleY.invert);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getTickPositions (tickValuesArray, scale, tickCount, tickExtra, zoomIdentity) {
+      let ticks;
+
+      if (Array.isArray(tickValuesArray) && tickValuesArray.length > 0) {
+        ticks = tickValuesArray;
+      } else if (isContinuous(scale)) {
+        ticks = getContinuousTicks(scale, tickCount, zoomIdentity);
+      } else if ('domain' in scale) {
+        ticks = scale.domain();
+      } else {
+        throw new Error(`Couldn't construct axis. Please provide 'tickValues' or a scale with
+      either a 'ticks' or a 'domain' method.`)
+      }
+
+      if (tickExtra && 'domain' in scale && ticks[0] !== scale.domain()[0]) {
+        ticks.unshift(scale.domain()[0]);
+      }
+
+      return ticks
+    }
+
+    function isContinuous (scale) {
+      return 'ticks' in scale
+    }
+
+    function getContinuousTicks (scale, tickCount, zoomIdentity) {
+      if (zoomIdentity) {
+        const rescaledDomain = rescale(scale, zoomIdentity);
+        return scale.copy().domain(rescaledDomain).ticks(tickCount)
+      }
+
+      return scale.ticks(tickCount)
+    }
+
+    // https://github.com/d3/d3-zoom#transform_rescaleX
+    function rescale (scale, { k, t }) {
+      const rescaledRange = scale.range().map(r => (r - t) / k);
+      const rescaledDomain = rescaledRange.map(scale.invert);
+      return rescaledDomain
+    }
+
+    function getTickCoordinatesXAxis (
+      ticks,
+      yAbsolute,
+      scaleX,
+      finalScaleY,
+      tickSize,
+      flip
+    ) {
+      const offset = flip ? -tickSize : tickSize;
+      const bandOffset = scaleX.bandwidth ? scaleX.bandwidth() / 2 : 0;
+
+      const yEndAbsolute = yAbsolute + offset;
+
+      const yCoordsTick = [
+        finalScaleY.invert(yAbsolute),
+        finalScaleY.invert(yEndAbsolute)
+      ];
+
+      const x = ticks.map(t => scaleX(t) + bandOffset).map(t => [t, t]);
+      const y = generateArrayOfLength(yCoordsTick, ticks.length);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getTickCoordinatesYAxis (
+      ticks,
+      xAbsolute,
+      scaleY,
+      finalScaleX,
+      tickSize,
+      flip
+    ) {
+      const offset = flip ? tickSize : -tickSize;
+      const bandOffset = scaleY.bandwidth ? scaleY.bandwidth() / 2 : 0;
+
+      const xEndAbsolute = xAbsolute + offset;
+
+      const xCoordsTick = [
+        finalScaleX.invert(xAbsolute),
+        finalScaleX.invert(xEndAbsolute)
+      ];
+
+      const x = generateArrayOfLength(xCoordsTick, ticks.length);
+      const y = ticks.map(t => scaleY(t) + bandOffset).map(t => [t, t]);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getFormat (labelFormat, scale, numberOfTicks) {
+      if (labelFormat) return labelFormat
+      if ('tickFormat' in scale) return scale.tickFormat(numberOfTicks)
+
+      return x => x
+    }
+
+    function getTickLabelCoordinatesXAxis (
+      tickCoordinates,
+      { finalScaleY },
+      labelOffset,
+      flip
+    ) {
+      const x = tickCoordinates.x().map(x => x[0]);
+
+      const y = tickCoordinates.y().map(y => {
+        const yEnd = y[1];
+        const yEndAbsolute = finalScaleY(yEnd);
+
+        const yLabelAbsolute = flip
+          ? yEndAbsolute - labelOffset
+          : yEndAbsolute + labelOffset;
+
+        return finalScaleY.invert(yLabelAbsolute)
+      });
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getTickLabelCoordinatesYAxis (
+      tickCoordinates,
+      { finalScaleX },
+      labelOffset,
+      flip
+    ) {
+      const x = tickCoordinates.x().map(x => {
+        const xEnd = x[1];
+        const xEndAbsolute = finalScaleX(xEnd);
+
+        const xLabelAbsolute = flip
+          ? xEndAbsolute + labelOffset
+          : xEndAbsolute - labelOffset;
+
+        return finalScaleX.invert(xLabelAbsolute)
+      });
+
+      const y = tickCoordinates.y().map(y => y[0]);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    // from https://stackoverflow.com/a/21015393
+    function getTextWidth (text, fontSize, fontFamily) {
+      let canvas;
+      if (typeof document === 'undefined') {
+        // if we don't have document/canvas available
+        // assume ratio width to height is 0.8
+        const length = text.length;
+        return length * 0.8 * fontSize
+      } else {
+        // re-use canvas object for better performance
+        canvas = getTextWidth.canvas || (getTextWidth.canvas = document.createElement('canvas'));
+        const context = canvas.getContext('2d');
+        context.font = fontSize + ' ' + fontFamily;
+        const metrics = context.measureText(text);
+        return metrics.width
+      }
+    }
+
+    function getTitleCoordinatesXAxis (
+      hjust,
+      xOffset,
+      vjust,
+      yOffset,
+      sectionContext,
+      flip,
+      axisHeight,
+      fontSize,
+      yAbsoluteAxis
+    ) {
+      const heightOffset = getHeightOffset(yOffset, flip, axisHeight, fontSize);
+
+      const xAbsolute = getAbsoluteXPosition(hjust, xOffset, sectionContext);
+      const yAbsolute = vjust === 'axis'
+        ? yAbsoluteAxis + heightOffset
+        : getAbsoluteYPosition(vjust, yOffset, sectionContext) + heightOffset;
+
+      const { finalScaleX, finalScaleY } = sectionContext;
+
+      const x = finalScaleX.invert(xAbsolute);
+      const y = finalScaleY.invert(yAbsolute);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getHeightOffset (offset, flip, axisHeight, fontSize) {
+      if (offset === 'axis') {
+        return flip
+          ? -(axisHeight + 1) - fontSize
+          : axisHeight + 1
+      }
+
+      if (offset.constructor !== Number) {
+        throw new Error('yOffset must be a Number')
+      }
+
+      return offset
+    }
+
+    function getTitleCoordinatesYAxis (
+      hjust,
+      xOffset,
+      vjust,
+      yOffset,
+      sectionContext,
+      flip,
+      axisWidth,
+      fontSize,
+      xAbsoluteAxis
+    ) {
+      const widthOffset = getWidthOffset(xOffset, flip, axisWidth);
+      const xAbsolute = hjust === 'axis'
+        ? xAbsoluteAxis + widthOffset
+        : getAbsoluteXPosition(hjust, xOffset, sectionContext);
+      const yAbsolute = getAbsoluteYPosition(vjust, yOffset, sectionContext);
+
+      const { finalScaleX, finalScaleY } = sectionContext;
+
+      const x = finalScaleX.invert(xAbsolute);
+      const y = finalScaleY.invert(yAbsolute);
+
+      return {
+        x: () => x,
+        y: () => y
+      }
+    }
+
+    function getWidthOffset (offset, flip, axisWidth, fontSize) {
+      if (offset === 'axis') {
+        return flip
+          ? axisWidth + 5
+          : -axisWidth - 5
+      }
+
+      if (offset.constructor !== Number) {
+        throw new Error('xOffset must be a Number')
+      }
+
+      return offset
+    }
+
+    /* node_modules/@snlab/florence/src/components/Guides/Axes/XAxis.svelte generated by Svelte v3.21.0 */
+
+    const { Error: Error_1 } = globals;
+    const file$3 = "node_modules/@snlab/florence/src/components/Guides/Axes/XAxis.svelte";
+
+    // (125:2) {#if baseLine}
+    function create_if_block_2$2(ctx) {
+    	let current;
+
+    	const line_spread_levels = [
+    		/*baseLineCoordinates*/ ctx[23],
+    		{ strokeWidth: /*baseLineWidth*/ ctx[3] },
+    		{ opacity: /*baseLineOpacity*/ ctx[2] },
+    		{ stroke: /*baseLineColor*/ ctx[1] }
+    	];
+
+    	let line_props = {};
+
+    	for (let i = 0; i < line_spread_levels.length; i += 1) {
+    		line_props = assign(line_props, line_spread_levels[i]);
+    	}
+
+    	const line = new Line({ props: line_props, $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(line.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(line, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const line_changes = (dirty[0] & /*baseLineCoordinates, baseLineWidth, baseLineOpacity, baseLineColor*/ 8388622)
+    			? get_spread_update(line_spread_levels, [
+    					dirty[0] & /*baseLineCoordinates*/ 8388608 && get_spread_object(/*baseLineCoordinates*/ ctx[23]),
+    					dirty[0] & /*baseLineWidth*/ 8 && { strokeWidth: /*baseLineWidth*/ ctx[3] },
+    					dirty[0] & /*baseLineOpacity*/ 4 && { opacity: /*baseLineOpacity*/ ctx[2] },
+    					dirty[0] & /*baseLineColor*/ 2 && { stroke: /*baseLineColor*/ ctx[1] }
+    				])
+    			: {};
+
+    			line.$set(line_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(line.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(line.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(line, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_2$2.name,
+    		type: "if",
+    		source: "(125:2) {#if baseLine}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (134:2) {#if ticks}
+    function create_if_block_1$3(ctx) {
+    	let current;
+
+    	const linelayer_spread_levels = [
+    		/*tickCoordinates*/ ctx[24],
+    		{ strokeWidth: /*tickWidth*/ ctx[5] },
+    		{ opacity: /*tickOpacity*/ ctx[7] },
+    		{ stroke: /*tickColor*/ ctx[6] },
+    		{ transition: /*transition*/ ctx[22] }
+    	];
+
+    	let linelayer_props = {};
+
+    	for (let i = 0; i < linelayer_spread_levels.length; i += 1) {
+    		linelayer_props = assign(linelayer_props, linelayer_spread_levels[i]);
+    	}
+
+    	const linelayer = new LineLayer({ props: linelayer_props, $$inline: true });
+
+    	const labellayer_spread_levels = [
+    		/*tickLabelCoordinates*/ ctx[26],
+    		{ text: /*tickLabelText*/ ctx[25] },
+    		{
+    			anchorPoint: /*labelAnchorPoint*/ ctx[27]
+    		},
+    		{ rotation: /*labelRotate*/ ctx[8] },
+    		{ fontFamily: /*labelFont*/ ctx[9] },
+    		{ fontSize: /*labelFontSize*/ ctx[10] },
+    		{ fontWeight: /*labelFontWeight*/ ctx[11] },
+    		{ opacity: /*labelOpacity*/ ctx[12] },
+    		{ fill: /*labelColor*/ ctx[13] },
+    		{ transition: /*transition*/ ctx[22] }
+    	];
+
+    	let labellayer_props = {};
+
+    	for (let i = 0; i < labellayer_spread_levels.length; i += 1) {
+    		labellayer_props = assign(labellayer_props, labellayer_spread_levels[i]);
+    	}
+
+    	const labellayer = new LabelLayer({ props: labellayer_props, $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(linelayer.$$.fragment);
+    			create_component(labellayer.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(linelayer, target, anchor);
+    			mount_component(labellayer, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const linelayer_changes = (dirty[0] & /*tickCoordinates, tickWidth, tickOpacity, tickColor, transition*/ 20971744)
+    			? get_spread_update(linelayer_spread_levels, [
+    					dirty[0] & /*tickCoordinates*/ 16777216 && get_spread_object(/*tickCoordinates*/ ctx[24]),
+    					dirty[0] & /*tickWidth*/ 32 && { strokeWidth: /*tickWidth*/ ctx[5] },
+    					dirty[0] & /*tickOpacity*/ 128 && { opacity: /*tickOpacity*/ ctx[7] },
+    					dirty[0] & /*tickColor*/ 64 && { stroke: /*tickColor*/ ctx[6] },
+    					dirty[0] & /*transition*/ 4194304 && { transition: /*transition*/ ctx[22] }
+    				])
+    			: {};
+
+    			linelayer.$set(linelayer_changes);
+
+    			const labellayer_changes = (dirty[0] & /*tickLabelCoordinates, tickLabelText, labelAnchorPoint, labelRotate, labelFont, labelFontSize, labelFontWeight, labelOpacity, labelColor, transition*/ 239091456)
+    			? get_spread_update(labellayer_spread_levels, [
+    					dirty[0] & /*tickLabelCoordinates*/ 67108864 && get_spread_object(/*tickLabelCoordinates*/ ctx[26]),
+    					dirty[0] & /*tickLabelText*/ 33554432 && { text: /*tickLabelText*/ ctx[25] },
+    					dirty[0] & /*labelAnchorPoint*/ 134217728 && {
+    						anchorPoint: /*labelAnchorPoint*/ ctx[27]
+    					},
+    					dirty[0] & /*labelRotate*/ 256 && { rotation: /*labelRotate*/ ctx[8] },
+    					dirty[0] & /*labelFont*/ 512 && { fontFamily: /*labelFont*/ ctx[9] },
+    					dirty[0] & /*labelFontSize*/ 1024 && { fontSize: /*labelFontSize*/ ctx[10] },
+    					dirty[0] & /*labelFontWeight*/ 2048 && { fontWeight: /*labelFontWeight*/ ctx[11] },
+    					dirty[0] & /*labelOpacity*/ 4096 && { opacity: /*labelOpacity*/ ctx[12] },
+    					dirty[0] & /*labelColor*/ 8192 && { fill: /*labelColor*/ ctx[13] },
+    					dirty[0] & /*transition*/ 4194304 && { transition: /*transition*/ ctx[22] }
+    				])
+    			: {};
+
+    			labellayer.$set(labellayer_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(linelayer.$$.fragment, local);
+    			transition_in(labellayer.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(linelayer.$$.fragment, local);
+    			transition_out(labellayer.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(linelayer, detaching);
+    			destroy_component(labellayer, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_1$3.name,
+    		type: "if",
+    		source: "(134:2) {#if ticks}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (157:2) {#if title.length > 0}
+    function create_if_block$3(ctx) {
+    	let current;
+
+    	const label_spread_levels = [
+    		/*titleCoordinates*/ ctx[28],
+    		{ text: /*title*/ ctx[14] },
+    		{
+    			anchorPoint: /*titleAnchorPoint*/ ctx[21]
+    		},
+    		{ rotation: /*titleRotation*/ ctx[20] },
+    		{ fontFamily: /*titleFont*/ ctx[16] },
+    		{ fontSize: /*titleFontSize*/ ctx[17] },
+    		{ fontWeight: /*titleFontWeight*/ ctx[18] },
+    		{ opacity: /*titleOpacity*/ ctx[19] },
+    		{ fill: /*titleColor*/ ctx[15] }
+    	];
+
+    	let label_props = {};
+
+    	for (let i = 0; i < label_spread_levels.length; i += 1) {
+    		label_props = assign(label_props, label_spread_levels[i]);
+    	}
+
+    	const label = new Label({ props: label_props, $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(label.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(label, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const label_changes = (dirty[0] & /*titleCoordinates, title, titleAnchorPoint, titleRotation, titleFont, titleFontSize, titleFontWeight, titleOpacity, titleColor*/ 272613376)
+    			? get_spread_update(label_spread_levels, [
+    					dirty[0] & /*titleCoordinates*/ 268435456 && get_spread_object(/*titleCoordinates*/ ctx[28]),
+    					dirty[0] & /*title*/ 16384 && { text: /*title*/ ctx[14] },
+    					dirty[0] & /*titleAnchorPoint*/ 2097152 && {
+    						anchorPoint: /*titleAnchorPoint*/ ctx[21]
+    					},
+    					dirty[0] & /*titleRotation*/ 1048576 && { rotation: /*titleRotation*/ ctx[20] },
+    					dirty[0] & /*titleFont*/ 65536 && { fontFamily: /*titleFont*/ ctx[16] },
+    					dirty[0] & /*titleFontSize*/ 131072 && { fontSize: /*titleFontSize*/ ctx[17] },
+    					dirty[0] & /*titleFontWeight*/ 262144 && { fontWeight: /*titleFontWeight*/ ctx[18] },
+    					dirty[0] & /*titleOpacity*/ 524288 && { opacity: /*titleOpacity*/ ctx[19] },
+    					dirty[0] & /*titleColor*/ 32768 && { fill: /*titleColor*/ ctx[15] }
+    				])
+    			: {};
+
+    			label.$set(label_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(label.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(label.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(label, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block$3.name,
+    		type: "if",
+    		source: "(157:2) {#if title.length > 0}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function create_fragment$9(ctx) {
+    	let g;
+    	let if_block0_anchor;
+    	let if_block1_anchor;
+    	let current;
+    	let if_block0 = /*baseLine*/ ctx[0] && create_if_block_2$2(ctx);
+    	let if_block1 = /*ticks*/ ctx[4] && create_if_block_1$3(ctx);
+    	let if_block2 = /*title*/ ctx[14].length > 0 && create_if_block$3(ctx);
+
+    	const block = {
+    		c: function create() {
+    			g = svg_element("g");
+    			if (if_block0) if_block0.c();
+    			if_block0_anchor = empty();
+    			if (if_block1) if_block1.c();
+    			if_block1_anchor = empty();
+    			if (if_block2) if_block2.c();
+    			attr_dev(g, "class", "x-axis");
+    			add_location(g, file$3, 122, 0, 3350);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error_1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, g, anchor);
+    			if (if_block0) if_block0.m(g, null);
+    			append_dev(g, if_block0_anchor);
+    			if (if_block1) if_block1.m(g, null);
+    			append_dev(g, if_block1_anchor);
+    			if (if_block2) if_block2.m(g, null);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			if (/*baseLine*/ ctx[0]) {
+    				if (if_block0) {
+    					if_block0.p(ctx, dirty);
+
+    					if (dirty[0] & /*baseLine*/ 1) {
+    						transition_in(if_block0, 1);
+    					}
+    				} else {
+    					if_block0 = create_if_block_2$2(ctx);
+    					if_block0.c();
+    					transition_in(if_block0, 1);
+    					if_block0.m(g, if_block0_anchor);
+    				}
+    			} else if (if_block0) {
+    				group_outros();
+
+    				transition_out(if_block0, 1, 1, () => {
+    					if_block0 = null;
+    				});
+
+    				check_outros();
+    			}
+
+    			if (/*ticks*/ ctx[4]) {
+    				if (if_block1) {
+    					if_block1.p(ctx, dirty);
+
+    					if (dirty[0] & /*ticks*/ 16) {
+    						transition_in(if_block1, 1);
+    					}
+    				} else {
+    					if_block1 = create_if_block_1$3(ctx);
+    					if_block1.c();
+    					transition_in(if_block1, 1);
+    					if_block1.m(g, if_block1_anchor);
+    				}
+    			} else if (if_block1) {
+    				group_outros();
+
+    				transition_out(if_block1, 1, 1, () => {
+    					if_block1 = null;
+    				});
+
+    				check_outros();
+    			}
+
+    			if (/*title*/ ctx[14].length > 0) {
+    				if (if_block2) {
+    					if_block2.p(ctx, dirty);
+
+    					if (dirty[0] & /*title*/ 16384) {
+    						transition_in(if_block2, 1);
+    					}
+    				} else {
+    					if_block2 = create_if_block$3(ctx);
+    					if_block2.c();
+    					transition_in(if_block2, 1);
+    					if_block2.m(g, null);
+    				}
+    			} else if (if_block2) {
+    				group_outros();
+
+    				transition_out(if_block2, 1, 1, () => {
+    					if_block2 = null;
+    				});
+
+    				check_outros();
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(if_block0);
+    			transition_in(if_block1);
+    			transition_in(if_block2);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(if_block0);
+    			transition_out(if_block1);
+    			transition_out(if_block2);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(g);
+    			if (if_block0) if_block0.d();
+    			if (if_block1) if_block1.d();
+    			if (if_block2) if_block2.d();
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$9.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$9($$self, $$props, $$invalidate) {
+    	let $sectionContext;
+    	let { flip = false } = $$props;
+    	let { scale = undefined } = $$props;
+    	let { baseLine = true } = $$props;
+    	let { baseLineColor = "black" } = $$props;
+    	let { baseLineOpacity = 1 } = $$props;
+    	let { baseLineWidth = 1 } = $$props;
+    	let { vjust = "bottom" } = $$props;
+    	let { yOffset = 0 } = $$props;
+    	let { ticks = true } = $$props;
+    	let { tickCount = 10 } = $$props;
+    	let { tickExtra = false } = $$props;
+    	let { tickValues = undefined } = $$props;
+    	let { tickSize = 5 } = $$props;
+    	let { tickWidth = 0.5 } = $$props;
+    	let { tickColor = "black" } = $$props;
+    	let { tickOpacity = 1 } = $$props;
+    	let { labelFormat = undefined } = $$props;
+    	let { labelOffset = 2 } = $$props;
+    	let { labelRotate = 0 } = $$props;
+    	let { labelFont = "Helvetica" } = $$props;
+    	let { labelFontSize = 10 } = $$props;
+    	let { labelFontWeight = "normal" } = $$props;
+    	let { labelOpacity = 1 } = $$props;
+    	let { labelColor = "black" } = $$props;
+    	let { titleHjust = "center" } = $$props;
+    	let { titleXOffset = 0 } = $$props;
+    	let { titleVjust = "axis" } = $$props;
+    	let { titleYOffset = "axis" } = $$props;
+    	let { title = "" } = $$props;
+    	let { titleColor = "black" } = $$props;
+    	let { titleFont = "Helvetica" } = $$props;
+    	let { titleFontSize = "12" } = $$props;
+    	let { titleFontWeight = "normal" } = $$props;
+    	let { titleOpacity = 1 } = $$props;
+    	let { titleRotation = 0 } = $$props;
+    	let { titleAnchorPoint = "t" } = $$props;
+    	let { transition = undefined } = $$props;
+
+    	// Contexts
+    	const sectionContext = subscribe$2();
+
+    	validate_store(sectionContext, "sectionContext");
+    	component_subscribe($$self, sectionContext, value => $$invalidate(44, $sectionContext = value));
+
+    	const writable_props = [
+    		"flip",
+    		"scale",
+    		"baseLine",
+    		"baseLineColor",
+    		"baseLineOpacity",
+    		"baseLineWidth",
+    		"vjust",
+    		"yOffset",
+    		"ticks",
+    		"tickCount",
+    		"tickExtra",
+    		"tickValues",
+    		"tickSize",
+    		"tickWidth",
+    		"tickColor",
+    		"tickOpacity",
+    		"labelFormat",
+    		"labelOffset",
+    		"labelRotate",
+    		"labelFont",
+    		"labelFontSize",
+    		"labelFontWeight",
+    		"labelOpacity",
+    		"labelColor",
+    		"titleHjust",
+    		"titleXOffset",
+    		"titleVjust",
+    		"titleYOffset",
+    		"title",
+    		"titleColor",
+    		"titleFont",
+    		"titleFontSize",
+    		"titleFontWeight",
+    		"titleOpacity",
+    		"titleRotation",
+    		"titleAnchorPoint",
+    		"transition"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<XAxis> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("XAxis", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("flip" in $$props) $$invalidate(30, flip = $$props.flip);
+    		if ("scale" in $$props) $$invalidate(31, scale = $$props.scale);
+    		if ("baseLine" in $$props) $$invalidate(0, baseLine = $$props.baseLine);
+    		if ("baseLineColor" in $$props) $$invalidate(1, baseLineColor = $$props.baseLineColor);
+    		if ("baseLineOpacity" in $$props) $$invalidate(2, baseLineOpacity = $$props.baseLineOpacity);
+    		if ("baseLineWidth" in $$props) $$invalidate(3, baseLineWidth = $$props.baseLineWidth);
+    		if ("vjust" in $$props) $$invalidate(32, vjust = $$props.vjust);
+    		if ("yOffset" in $$props) $$invalidate(33, yOffset = $$props.yOffset);
+    		if ("ticks" in $$props) $$invalidate(4, ticks = $$props.ticks);
+    		if ("tickCount" in $$props) $$invalidate(34, tickCount = $$props.tickCount);
+    		if ("tickExtra" in $$props) $$invalidate(35, tickExtra = $$props.tickExtra);
+    		if ("tickValues" in $$props) $$invalidate(36, tickValues = $$props.tickValues);
+    		if ("tickSize" in $$props) $$invalidate(37, tickSize = $$props.tickSize);
+    		if ("tickWidth" in $$props) $$invalidate(5, tickWidth = $$props.tickWidth);
+    		if ("tickColor" in $$props) $$invalidate(6, tickColor = $$props.tickColor);
+    		if ("tickOpacity" in $$props) $$invalidate(7, tickOpacity = $$props.tickOpacity);
+    		if ("labelFormat" in $$props) $$invalidate(38, labelFormat = $$props.labelFormat);
+    		if ("labelOffset" in $$props) $$invalidate(39, labelOffset = $$props.labelOffset);
+    		if ("labelRotate" in $$props) $$invalidate(8, labelRotate = $$props.labelRotate);
+    		if ("labelFont" in $$props) $$invalidate(9, labelFont = $$props.labelFont);
+    		if ("labelFontSize" in $$props) $$invalidate(10, labelFontSize = $$props.labelFontSize);
+    		if ("labelFontWeight" in $$props) $$invalidate(11, labelFontWeight = $$props.labelFontWeight);
+    		if ("labelOpacity" in $$props) $$invalidate(12, labelOpacity = $$props.labelOpacity);
+    		if ("labelColor" in $$props) $$invalidate(13, labelColor = $$props.labelColor);
+    		if ("titleHjust" in $$props) $$invalidate(40, titleHjust = $$props.titleHjust);
+    		if ("titleXOffset" in $$props) $$invalidate(41, titleXOffset = $$props.titleXOffset);
+    		if ("titleVjust" in $$props) $$invalidate(42, titleVjust = $$props.titleVjust);
+    		if ("titleYOffset" in $$props) $$invalidate(43, titleYOffset = $$props.titleYOffset);
+    		if ("title" in $$props) $$invalidate(14, title = $$props.title);
+    		if ("titleColor" in $$props) $$invalidate(15, titleColor = $$props.titleColor);
+    		if ("titleFont" in $$props) $$invalidate(16, titleFont = $$props.titleFont);
+    		if ("titleFontSize" in $$props) $$invalidate(17, titleFontSize = $$props.titleFontSize);
+    		if ("titleFontWeight" in $$props) $$invalidate(18, titleFontWeight = $$props.titleFontWeight);
+    		if ("titleOpacity" in $$props) $$invalidate(19, titleOpacity = $$props.titleOpacity);
+    		if ("titleRotation" in $$props) $$invalidate(20, titleRotation = $$props.titleRotation);
+    		if ("titleAnchorPoint" in $$props) $$invalidate(21, titleAnchorPoint = $$props.titleAnchorPoint);
+    		if ("transition" in $$props) $$invalidate(22, transition = $$props.transition);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Line,
+    		LineLayer,
+    		Label,
+    		LabelLayer,
+    		SectionContext,
+    		getAbsoluteYPosition,
+    		getBaseLineCoordinatesXAxis,
+    		getTickPositions,
+    		getTickCoordinatesXAxis,
+    		getFormat,
+    		getTickLabelCoordinatesXAxis,
+    		getTitleCoordinatesXAxis,
+    		flip,
+    		scale,
+    		baseLine,
+    		baseLineColor,
+    		baseLineOpacity,
+    		baseLineWidth,
+    		vjust,
+    		yOffset,
+    		ticks,
+    		tickCount,
+    		tickExtra,
+    		tickValues,
+    		tickSize,
+    		tickWidth,
+    		tickColor,
+    		tickOpacity,
+    		labelFormat,
+    		labelOffset,
+    		labelRotate,
+    		labelFont,
+    		labelFontSize,
+    		labelFontWeight,
+    		labelOpacity,
+    		labelColor,
+    		titleHjust,
+    		titleXOffset,
+    		titleVjust,
+    		titleYOffset,
+    		title,
+    		titleColor,
+    		titleFont,
+    		titleFontSize,
+    		titleFontWeight,
+    		titleOpacity,
+    		titleRotation,
+    		titleAnchorPoint,
+    		transition,
+    		sectionContext,
+    		$sectionContext,
+    		scaleX,
+    		yAbsolute,
+    		baseLineCoordinates,
+    		tickPositions,
+    		tickCoordinates,
+    		format,
+    		tickLabelText,
+    		tickLabelCoordinates,
+    		labelAnchorPoint,
+    		axisHeight,
+    		titleCoordinates
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("flip" in $$props) $$invalidate(30, flip = $$props.flip);
+    		if ("scale" in $$props) $$invalidate(31, scale = $$props.scale);
+    		if ("baseLine" in $$props) $$invalidate(0, baseLine = $$props.baseLine);
+    		if ("baseLineColor" in $$props) $$invalidate(1, baseLineColor = $$props.baseLineColor);
+    		if ("baseLineOpacity" in $$props) $$invalidate(2, baseLineOpacity = $$props.baseLineOpacity);
+    		if ("baseLineWidth" in $$props) $$invalidate(3, baseLineWidth = $$props.baseLineWidth);
+    		if ("vjust" in $$props) $$invalidate(32, vjust = $$props.vjust);
+    		if ("yOffset" in $$props) $$invalidate(33, yOffset = $$props.yOffset);
+    		if ("ticks" in $$props) $$invalidate(4, ticks = $$props.ticks);
+    		if ("tickCount" in $$props) $$invalidate(34, tickCount = $$props.tickCount);
+    		if ("tickExtra" in $$props) $$invalidate(35, tickExtra = $$props.tickExtra);
+    		if ("tickValues" in $$props) $$invalidate(36, tickValues = $$props.tickValues);
+    		if ("tickSize" in $$props) $$invalidate(37, tickSize = $$props.tickSize);
+    		if ("tickWidth" in $$props) $$invalidate(5, tickWidth = $$props.tickWidth);
+    		if ("tickColor" in $$props) $$invalidate(6, tickColor = $$props.tickColor);
+    		if ("tickOpacity" in $$props) $$invalidate(7, tickOpacity = $$props.tickOpacity);
+    		if ("labelFormat" in $$props) $$invalidate(38, labelFormat = $$props.labelFormat);
+    		if ("labelOffset" in $$props) $$invalidate(39, labelOffset = $$props.labelOffset);
+    		if ("labelRotate" in $$props) $$invalidate(8, labelRotate = $$props.labelRotate);
+    		if ("labelFont" in $$props) $$invalidate(9, labelFont = $$props.labelFont);
+    		if ("labelFontSize" in $$props) $$invalidate(10, labelFontSize = $$props.labelFontSize);
+    		if ("labelFontWeight" in $$props) $$invalidate(11, labelFontWeight = $$props.labelFontWeight);
+    		if ("labelOpacity" in $$props) $$invalidate(12, labelOpacity = $$props.labelOpacity);
+    		if ("labelColor" in $$props) $$invalidate(13, labelColor = $$props.labelColor);
+    		if ("titleHjust" in $$props) $$invalidate(40, titleHjust = $$props.titleHjust);
+    		if ("titleXOffset" in $$props) $$invalidate(41, titleXOffset = $$props.titleXOffset);
+    		if ("titleVjust" in $$props) $$invalidate(42, titleVjust = $$props.titleVjust);
+    		if ("titleYOffset" in $$props) $$invalidate(43, titleYOffset = $$props.titleYOffset);
+    		if ("title" in $$props) $$invalidate(14, title = $$props.title);
+    		if ("titleColor" in $$props) $$invalidate(15, titleColor = $$props.titleColor);
+    		if ("titleFont" in $$props) $$invalidate(16, titleFont = $$props.titleFont);
+    		if ("titleFontSize" in $$props) $$invalidate(17, titleFontSize = $$props.titleFontSize);
+    		if ("titleFontWeight" in $$props) $$invalidate(18, titleFontWeight = $$props.titleFontWeight);
+    		if ("titleOpacity" in $$props) $$invalidate(19, titleOpacity = $$props.titleOpacity);
+    		if ("titleRotation" in $$props) $$invalidate(20, titleRotation = $$props.titleRotation);
+    		if ("titleAnchorPoint" in $$props) $$invalidate(21, titleAnchorPoint = $$props.titleAnchorPoint);
+    		if ("transition" in $$props) $$invalidate(22, transition = $$props.transition);
+    		if ("scaleX" in $$props) $$invalidate(45, scaleX = $$props.scaleX);
+    		if ("yAbsolute" in $$props) $$invalidate(46, yAbsolute = $$props.yAbsolute);
+    		if ("baseLineCoordinates" in $$props) $$invalidate(23, baseLineCoordinates = $$props.baseLineCoordinates);
+    		if ("tickPositions" in $$props) $$invalidate(47, tickPositions = $$props.tickPositions);
+    		if ("tickCoordinates" in $$props) $$invalidate(24, tickCoordinates = $$props.tickCoordinates);
+    		if ("format" in $$props) $$invalidate(48, format = $$props.format);
+    		if ("tickLabelText" in $$props) $$invalidate(25, tickLabelText = $$props.tickLabelText);
+    		if ("tickLabelCoordinates" in $$props) $$invalidate(26, tickLabelCoordinates = $$props.tickLabelCoordinates);
+    		if ("labelAnchorPoint" in $$props) $$invalidate(27, labelAnchorPoint = $$props.labelAnchorPoint);
+    		if ("axisHeight" in $$props) $$invalidate(49, axisHeight = $$props.axisHeight);
+    		if ("titleCoordinates" in $$props) $$invalidate(28, titleCoordinates = $$props.titleCoordinates);
+    	};
+
+    	let scaleX;
+    	let yAbsolute;
+    	let baseLineCoordinates;
+    	let tickPositions;
+    	let tickCoordinates;
+    	let format;
+    	let tickLabelText;
+    	let tickLabelCoordinates;
+    	let labelAnchorPoint;
+    	let axisHeight;
+    	let titleCoordinates;
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	$$self.$$.update = () => {
+    		if ($$self.$$.dirty[1] & /*$sectionContext*/ 8192) {
+    			// Make sure not polar
+    			 {
+    				if ($sectionContext.transformation === "polar") {
+    					throw new Error("Axes do'nt work with polar coordinates (for now)");
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[1] & /*scale, $sectionContext*/ 8193) {
+    			// Scale
+    			 $$invalidate(45, scaleX = scale
+    			? scale.copy().range($sectionContext.rangeX)
+    			: $sectionContext.scaleX);
+    		}
+
+    		if ($$self.$$.dirty[1] & /*vjust, yOffset, $sectionContext*/ 8198) {
+    			// Absolute position (in pixels)
+    			 $$invalidate(46, yAbsolute = getAbsoluteYPosition(vjust, yOffset, $sectionContext));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*yAbsolute, $sectionContext*/ 40960) {
+    			// Baseline
+    			 $$invalidate(23, baseLineCoordinates = getBaseLineCoordinatesXAxis(yAbsolute, $sectionContext));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*tickValues, scaleX, tickCount, tickExtra, $sectionContext*/ 24632) {
+    			// Ticks
+    			 $$invalidate(47, tickPositions = getTickPositions(tickValues, scaleX, tickCount, tickExtra, $sectionContext.zoomIdentity
+    			? {
+    					t: $sectionContext.zoomIdentity.x,
+    					k: $sectionContext.zoomIdentity.kx
+    				}
+    			: undefined));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*flip*/ 1073741824 | $$self.$$.dirty[1] & /*tickPositions, yAbsolute, scaleX, $sectionContext, tickSize*/ 122944) {
+    			 $$invalidate(24, tickCoordinates = getTickCoordinatesXAxis(tickPositions, yAbsolute, scaleX, $sectionContext.finalScaleY, tickSize, flip));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*ticks*/ 16 | $$self.$$.dirty[1] & /*labelFormat, $sectionContext*/ 8320) {
+    			// Tick labels
+    			 $$invalidate(48, format = getFormat(labelFormat, $sectionContext.scaleX, ticks.length));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*tickPositions, format*/ 196608) {
+    			 $$invalidate(25, tickLabelText = tickPositions.map(format));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tickCoordinates, flip*/ 1090519040 | $$self.$$.dirty[1] & /*$sectionContext, labelOffset*/ 8448) {
+    			 $$invalidate(26, tickLabelCoordinates = getTickLabelCoordinatesXAxis(tickCoordinates, $sectionContext, labelOffset, flip));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*flip*/ 1073741824) {
+    			 $$invalidate(27, labelAnchorPoint = flip ? "b" : "t");
+    		}
+
+    		if ($$self.$$.dirty[0] & /*baseLineWidth, labelFontSize*/ 1032 | $$self.$$.dirty[1] & /*tickSize, labelOffset*/ 320) {
+    			// Title
+    			 $$invalidate(49, axisHeight = baseLineWidth + tickSize + labelOffset + labelFontSize);
+    		}
+
+    		if ($$self.$$.dirty[0] & /*flip, titleFontSize*/ 1073872896 | $$self.$$.dirty[1] & /*titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, axisHeight, yAbsolute*/ 310784) {
+    			 $$invalidate(28, titleCoordinates = getTitleCoordinatesXAxis(titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, flip, axisHeight, titleFontSize, yAbsolute));
+    		}
+    	};
+
+    	return [
+    		baseLine,
+    		baseLineColor,
+    		baseLineOpacity,
+    		baseLineWidth,
+    		ticks,
+    		tickWidth,
+    		tickColor,
+    		tickOpacity,
+    		labelRotate,
+    		labelFont,
+    		labelFontSize,
+    		labelFontWeight,
+    		labelOpacity,
+    		labelColor,
+    		title,
+    		titleColor,
+    		titleFont,
+    		titleFontSize,
+    		titleFontWeight,
+    		titleOpacity,
+    		titleRotation,
+    		titleAnchorPoint,
+    		transition,
+    		baseLineCoordinates,
+    		tickCoordinates,
+    		tickLabelText,
+    		tickLabelCoordinates,
+    		labelAnchorPoint,
+    		titleCoordinates,
+    		sectionContext,
+    		flip,
+    		scale,
+    		vjust,
+    		yOffset,
+    		tickCount,
+    		tickExtra,
+    		tickValues,
+    		tickSize,
+    		labelFormat,
+    		labelOffset,
+    		titleHjust,
+    		titleXOffset,
+    		titleVjust,
+    		titleYOffset
+    	];
+    }
+
+    class XAxis extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(
+    			this,
+    			options,
+    			instance$9,
+    			create_fragment$9,
+    			safe_not_equal,
+    			{
+    				flip: 30,
+    				scale: 31,
+    				baseLine: 0,
+    				baseLineColor: 1,
+    				baseLineOpacity: 2,
+    				baseLineWidth: 3,
+    				vjust: 32,
+    				yOffset: 33,
+    				ticks: 4,
+    				tickCount: 34,
+    				tickExtra: 35,
+    				tickValues: 36,
+    				tickSize: 37,
+    				tickWidth: 5,
+    				tickColor: 6,
+    				tickOpacity: 7,
+    				labelFormat: 38,
+    				labelOffset: 39,
+    				labelRotate: 8,
+    				labelFont: 9,
+    				labelFontSize: 10,
+    				labelFontWeight: 11,
+    				labelOpacity: 12,
+    				labelColor: 13,
+    				titleHjust: 40,
+    				titleXOffset: 41,
+    				titleVjust: 42,
+    				titleYOffset: 43,
+    				title: 14,
+    				titleColor: 15,
+    				titleFont: 16,
+    				titleFontSize: 17,
+    				titleFontWeight: 18,
+    				titleOpacity: 19,
+    				titleRotation: 20,
+    				titleAnchorPoint: 21,
+    				transition: 22
+    			},
+    			[-1, -1]
+    		);
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "XAxis",
+    			options,
+    			id: create_fragment$9.name
+    		});
+    	}
+
+    	get flip() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set flip(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get scale() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set scale(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLine() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLine(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLineColor() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLineColor(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLineOpacity() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLineOpacity(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLineWidth() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLineWidth(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get vjust() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set vjust(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get yOffset() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set yOffset(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get ticks() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set ticks(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickCount() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickCount(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickExtra() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickExtra(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickValues() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickValues(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickSize() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickSize(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickWidth() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickWidth(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickColor() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickColor(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickOpacity() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickOpacity(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFormat() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFormat(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelOffset() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelOffset(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelRotate() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelRotate(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFont() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFont(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFontSize() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFontSize(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFontWeight() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFontWeight(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelOpacity() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelOpacity(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelColor() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelColor(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleHjust() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleHjust(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleXOffset() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleXOffset(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleVjust() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleVjust(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleYOffset() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleYOffset(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get title() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set title(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleColor() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleColor(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleFont() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleFont(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleFontSize() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleFontSize(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleFontWeight() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleFontWeight(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleOpacity() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleOpacity(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleRotation() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleRotation(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleAnchorPoint() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleAnchorPoint(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error_1("<XAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error_1("<XAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* node_modules/@snlab/florence/src/components/Guides/Axes/YAxis.svelte generated by Svelte v3.21.0 */
+
+    const { Error: Error_1$1 } = globals;
+    const file$4 = "node_modules/@snlab/florence/src/components/Guides/Axes/YAxis.svelte";
+
+    // (126:2) {#if baseLine}
+    function create_if_block_2$3(ctx) {
+    	let current;
+
+    	const line_spread_levels = [
+    		/*baseLineCoordinates*/ ctx[23],
+    		{ strokeWidth: /*baseLineWidth*/ ctx[3] },
+    		{ opacity: /*baseLineOpacity*/ ctx[2] },
+    		{ stroke: /*baseLineColor*/ ctx[1] }
+    	];
+
+    	let line_props = {};
+
+    	for (let i = 0; i < line_spread_levels.length; i += 1) {
+    		line_props = assign(line_props, line_spread_levels[i]);
+    	}
+
+    	const line = new Line({ props: line_props, $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(line.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(line, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const line_changes = (dirty[0] & /*baseLineCoordinates, baseLineWidth, baseLineOpacity, baseLineColor*/ 8388622)
+    			? get_spread_update(line_spread_levels, [
+    					dirty[0] & /*baseLineCoordinates*/ 8388608 && get_spread_object(/*baseLineCoordinates*/ ctx[23]),
+    					dirty[0] & /*baseLineWidth*/ 8 && { strokeWidth: /*baseLineWidth*/ ctx[3] },
+    					dirty[0] & /*baseLineOpacity*/ 4 && { opacity: /*baseLineOpacity*/ ctx[2] },
+    					dirty[0] & /*baseLineColor*/ 2 && { stroke: /*baseLineColor*/ ctx[1] }
+    				])
+    			: {};
+
+    			line.$set(line_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(line.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(line.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(line, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_2$3.name,
+    		type: "if",
+    		source: "(126:2) {#if baseLine}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (135:2) {#if ticks}
+    function create_if_block_1$4(ctx) {
+    	let current;
+
+    	const linelayer_spread_levels = [
+    		/*tickCoordinates*/ ctx[24],
+    		{ strokeWidth: /*tickWidth*/ ctx[5] },
+    		{ opacity: /*tickOpacity*/ ctx[7] },
+    		{ stroke: /*tickColor*/ ctx[6] },
+    		{ transition: /*transition*/ ctx[22] }
+    	];
+
+    	let linelayer_props = {};
+
+    	for (let i = 0; i < linelayer_spread_levels.length; i += 1) {
+    		linelayer_props = assign(linelayer_props, linelayer_spread_levels[i]);
+    	}
+
+    	const linelayer = new LineLayer({ props: linelayer_props, $$inline: true });
+
+    	const labellayer_spread_levels = [
+    		/*tickLabelCoordinates*/ ctx[26],
+    		{ text: /*tickLabelText*/ ctx[25] },
+    		{
+    			anchorPoint: /*labelAnchorPoint*/ ctx[27]
+    		},
+    		{ rotation: /*labelRotate*/ ctx[8] },
+    		{ fontFamily: /*labelFont*/ ctx[9] },
+    		{ fontSize: /*labelFontSize*/ ctx[10] },
+    		{ fontWeight: /*labelFontWeight*/ ctx[11] },
+    		{ opacity: /*labelOpacity*/ ctx[12] },
+    		{ fill: /*labelColor*/ ctx[13] },
+    		{ transition: /*transition*/ ctx[22] }
+    	];
+
+    	let labellayer_props = {};
+
+    	for (let i = 0; i < labellayer_spread_levels.length; i += 1) {
+    		labellayer_props = assign(labellayer_props, labellayer_spread_levels[i]);
+    	}
+
+    	const labellayer = new LabelLayer({ props: labellayer_props, $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(linelayer.$$.fragment);
+    			create_component(labellayer.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(linelayer, target, anchor);
+    			mount_component(labellayer, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const linelayer_changes = (dirty[0] & /*tickCoordinates, tickWidth, tickOpacity, tickColor, transition*/ 20971744)
+    			? get_spread_update(linelayer_spread_levels, [
+    					dirty[0] & /*tickCoordinates*/ 16777216 && get_spread_object(/*tickCoordinates*/ ctx[24]),
+    					dirty[0] & /*tickWidth*/ 32 && { strokeWidth: /*tickWidth*/ ctx[5] },
+    					dirty[0] & /*tickOpacity*/ 128 && { opacity: /*tickOpacity*/ ctx[7] },
+    					dirty[0] & /*tickColor*/ 64 && { stroke: /*tickColor*/ ctx[6] },
+    					dirty[0] & /*transition*/ 4194304 && { transition: /*transition*/ ctx[22] }
+    				])
+    			: {};
+
+    			linelayer.$set(linelayer_changes);
+
+    			const labellayer_changes = (dirty[0] & /*tickLabelCoordinates, tickLabelText, labelAnchorPoint, labelRotate, labelFont, labelFontSize, labelFontWeight, labelOpacity, labelColor, transition*/ 239091456)
+    			? get_spread_update(labellayer_spread_levels, [
+    					dirty[0] & /*tickLabelCoordinates*/ 67108864 && get_spread_object(/*tickLabelCoordinates*/ ctx[26]),
+    					dirty[0] & /*tickLabelText*/ 33554432 && { text: /*tickLabelText*/ ctx[25] },
+    					dirty[0] & /*labelAnchorPoint*/ 134217728 && {
+    						anchorPoint: /*labelAnchorPoint*/ ctx[27]
+    					},
+    					dirty[0] & /*labelRotate*/ 256 && { rotation: /*labelRotate*/ ctx[8] },
+    					dirty[0] & /*labelFont*/ 512 && { fontFamily: /*labelFont*/ ctx[9] },
+    					dirty[0] & /*labelFontSize*/ 1024 && { fontSize: /*labelFontSize*/ ctx[10] },
+    					dirty[0] & /*labelFontWeight*/ 2048 && { fontWeight: /*labelFontWeight*/ ctx[11] },
+    					dirty[0] & /*labelOpacity*/ 4096 && { opacity: /*labelOpacity*/ ctx[12] },
+    					dirty[0] & /*labelColor*/ 8192 && { fill: /*labelColor*/ ctx[13] },
+    					dirty[0] & /*transition*/ 4194304 && { transition: /*transition*/ ctx[22] }
+    				])
+    			: {};
+
+    			labellayer.$set(labellayer_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(linelayer.$$.fragment, local);
+    			transition_in(labellayer.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(linelayer.$$.fragment, local);
+    			transition_out(labellayer.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(linelayer, detaching);
+    			destroy_component(labellayer, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_1$4.name,
+    		type: "if",
+    		source: "(135:2) {#if ticks}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (158:2) {#if title.length > 0}
+    function create_if_block$4(ctx) {
+    	let current;
+
+    	const label_spread_levels = [
+    		/*titleCoordinates*/ ctx[28],
+    		{ text: /*title*/ ctx[14] },
+    		{
+    			anchorPoint: /*titleAnchorPoint*/ ctx[21]
+    		},
+    		{ rotation: /*titleRotation*/ ctx[20] },
+    		{ fontFamily: /*titleFont*/ ctx[16] },
+    		{ fontSize: /*titleFontSize*/ ctx[17] },
+    		{ fontWeight: /*titleFontWeight*/ ctx[18] },
+    		{ opacity: /*titleOpacity*/ ctx[19] },
+    		{ fill: /*titleColor*/ ctx[15] }
+    	];
+
+    	let label_props = {};
+
+    	for (let i = 0; i < label_spread_levels.length; i += 1) {
+    		label_props = assign(label_props, label_spread_levels[i]);
+    	}
+
+    	const label = new Label({ props: label_props, $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(label.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(label, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			const label_changes = (dirty[0] & /*titleCoordinates, title, titleAnchorPoint, titleRotation, titleFont, titleFontSize, titleFontWeight, titleOpacity, titleColor*/ 272613376)
+    			? get_spread_update(label_spread_levels, [
+    					dirty[0] & /*titleCoordinates*/ 268435456 && get_spread_object(/*titleCoordinates*/ ctx[28]),
+    					dirty[0] & /*title*/ 16384 && { text: /*title*/ ctx[14] },
+    					dirty[0] & /*titleAnchorPoint*/ 2097152 && {
+    						anchorPoint: /*titleAnchorPoint*/ ctx[21]
+    					},
+    					dirty[0] & /*titleRotation*/ 1048576 && { rotation: /*titleRotation*/ ctx[20] },
+    					dirty[0] & /*titleFont*/ 65536 && { fontFamily: /*titleFont*/ ctx[16] },
+    					dirty[0] & /*titleFontSize*/ 131072 && { fontSize: /*titleFontSize*/ ctx[17] },
+    					dirty[0] & /*titleFontWeight*/ 262144 && { fontWeight: /*titleFontWeight*/ ctx[18] },
+    					dirty[0] & /*titleOpacity*/ 524288 && { opacity: /*titleOpacity*/ ctx[19] },
+    					dirty[0] & /*titleColor*/ 32768 && { fill: /*titleColor*/ ctx[15] }
+    				])
+    			: {};
+
+    			label.$set(label_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(label.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(label.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(label, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block$4.name,
+    		type: "if",
+    		source: "(158:2) {#if title.length > 0}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function create_fragment$a(ctx) {
+    	let g;
+    	let if_block0_anchor;
+    	let if_block1_anchor;
+    	let current;
+    	let if_block0 = /*baseLine*/ ctx[0] && create_if_block_2$3(ctx);
+    	let if_block1 = /*ticks*/ ctx[4] && create_if_block_1$4(ctx);
+    	let if_block2 = /*title*/ ctx[14].length > 0 && create_if_block$4(ctx);
+
+    	const block = {
+    		c: function create() {
+    			g = svg_element("g");
+    			if (if_block0) if_block0.c();
+    			if_block0_anchor = empty();
+    			if (if_block1) if_block1.c();
+    			if_block1_anchor = empty();
+    			if (if_block2) if_block2.c();
+    			attr_dev(g, "class", "y-axis");
+    			add_location(g, file$4, 123, 0, 3469);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error_1$1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, g, anchor);
+    			if (if_block0) if_block0.m(g, null);
+    			append_dev(g, if_block0_anchor);
+    			if (if_block1) if_block1.m(g, null);
+    			append_dev(g, if_block1_anchor);
+    			if (if_block2) if_block2.m(g, null);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			if (/*baseLine*/ ctx[0]) {
+    				if (if_block0) {
+    					if_block0.p(ctx, dirty);
+
+    					if (dirty[0] & /*baseLine*/ 1) {
+    						transition_in(if_block0, 1);
+    					}
+    				} else {
+    					if_block0 = create_if_block_2$3(ctx);
+    					if_block0.c();
+    					transition_in(if_block0, 1);
+    					if_block0.m(g, if_block0_anchor);
+    				}
+    			} else if (if_block0) {
+    				group_outros();
+
+    				transition_out(if_block0, 1, 1, () => {
+    					if_block0 = null;
+    				});
+
+    				check_outros();
+    			}
+
+    			if (/*ticks*/ ctx[4]) {
+    				if (if_block1) {
+    					if_block1.p(ctx, dirty);
+
+    					if (dirty[0] & /*ticks*/ 16) {
+    						transition_in(if_block1, 1);
+    					}
+    				} else {
+    					if_block1 = create_if_block_1$4(ctx);
+    					if_block1.c();
+    					transition_in(if_block1, 1);
+    					if_block1.m(g, if_block1_anchor);
+    				}
+    			} else if (if_block1) {
+    				group_outros();
+
+    				transition_out(if_block1, 1, 1, () => {
+    					if_block1 = null;
+    				});
+
+    				check_outros();
+    			}
+
+    			if (/*title*/ ctx[14].length > 0) {
+    				if (if_block2) {
+    					if_block2.p(ctx, dirty);
+
+    					if (dirty[0] & /*title*/ 16384) {
+    						transition_in(if_block2, 1);
+    					}
+    				} else {
+    					if_block2 = create_if_block$4(ctx);
+    					if_block2.c();
+    					transition_in(if_block2, 1);
+    					if_block2.m(g, null);
+    				}
+    			} else if (if_block2) {
+    				group_outros();
+
+    				transition_out(if_block2, 1, 1, () => {
+    					if_block2 = null;
+    				});
+
+    				check_outros();
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(if_block0);
+    			transition_in(if_block1);
+    			transition_in(if_block2);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(if_block0);
+    			transition_out(if_block1);
+    			transition_out(if_block2);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(g);
+    			if (if_block0) if_block0.d();
+    			if (if_block1) if_block1.d();
+    			if (if_block2) if_block2.d();
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$a.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$a($$self, $$props, $$invalidate) {
+    	let $sectionContext;
+    	let { flip = false } = $$props;
+    	let { scale = undefined } = $$props;
+    	let { baseLine = true } = $$props;
+    	let { baseLineColor = "black" } = $$props;
+    	let { baseLineOpacity = 1 } = $$props;
+    	let { baseLineWidth = 1 } = $$props;
+    	let { hjust = "left" } = $$props;
+    	let { xOffset = 0 } = $$props;
+    	let { ticks = true } = $$props;
+    	let { tickCount = 10 } = $$props;
+    	let { tickExtra = false } = $$props;
+    	let { tickValues = undefined } = $$props;
+    	let { tickSize = 5 } = $$props;
+    	let { tickWidth = 0.5 } = $$props;
+    	let { tickColor = "black" } = $$props;
+    	let { tickOpacity = 1 } = $$props;
+    	let { labelFormat = undefined } = $$props;
+    	let { labelOffset = 2 } = $$props;
+    	let { labelRotate = 0 } = $$props;
+    	let { labelFont = "Helvetica" } = $$props;
+    	let { labelFontSize = 10 } = $$props;
+    	let { labelFontWeight = "normal" } = $$props;
+    	let { labelOpacity = 1 } = $$props;
+    	let { labelColor = "black" } = $$props;
+    	let { titleHjust = "axis" } = $$props;
+    	let { titleXOffset = "axis" } = $$props;
+    	let { titleVjust = "center" } = $$props;
+    	let { titleYOffset = 0 } = $$props;
+    	let { title = "" } = $$props;
+    	let { titleColor = "black" } = $$props;
+    	let { titleFont = "Helvetica" } = $$props;
+    	let { titleFontSize = "12" } = $$props;
+    	let { titleFontWeight = "normal" } = $$props;
+    	let { titleOpacity = 1 } = $$props;
+    	let { titleRotation = -90 } = $$props;
+    	let { titleAnchorPoint = "center" } = $$props;
+    	let { transition = undefined } = $$props;
+
+    	// Contexts
+    	const sectionContext = subscribe$2();
+
+    	validate_store(sectionContext, "sectionContext");
+    	component_subscribe($$self, sectionContext, value => $$invalidate(44, $sectionContext = value));
+
+    	const writable_props = [
+    		"flip",
+    		"scale",
+    		"baseLine",
+    		"baseLineColor",
+    		"baseLineOpacity",
+    		"baseLineWidth",
+    		"hjust",
+    		"xOffset",
+    		"ticks",
+    		"tickCount",
+    		"tickExtra",
+    		"tickValues",
+    		"tickSize",
+    		"tickWidth",
+    		"tickColor",
+    		"tickOpacity",
+    		"labelFormat",
+    		"labelOffset",
+    		"labelRotate",
+    		"labelFont",
+    		"labelFontSize",
+    		"labelFontWeight",
+    		"labelOpacity",
+    		"labelColor",
+    		"titleHjust",
+    		"titleXOffset",
+    		"titleVjust",
+    		"titleYOffset",
+    		"title",
+    		"titleColor",
+    		"titleFont",
+    		"titleFontSize",
+    		"titleFontWeight",
+    		"titleOpacity",
+    		"titleRotation",
+    		"titleAnchorPoint",
+    		"transition"
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<YAxis> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("YAxis", $$slots, []);
+
+    	$$self.$set = $$props => {
+    		if ("flip" in $$props) $$invalidate(30, flip = $$props.flip);
+    		if ("scale" in $$props) $$invalidate(31, scale = $$props.scale);
+    		if ("baseLine" in $$props) $$invalidate(0, baseLine = $$props.baseLine);
+    		if ("baseLineColor" in $$props) $$invalidate(1, baseLineColor = $$props.baseLineColor);
+    		if ("baseLineOpacity" in $$props) $$invalidate(2, baseLineOpacity = $$props.baseLineOpacity);
+    		if ("baseLineWidth" in $$props) $$invalidate(3, baseLineWidth = $$props.baseLineWidth);
+    		if ("hjust" in $$props) $$invalidate(32, hjust = $$props.hjust);
+    		if ("xOffset" in $$props) $$invalidate(33, xOffset = $$props.xOffset);
+    		if ("ticks" in $$props) $$invalidate(4, ticks = $$props.ticks);
+    		if ("tickCount" in $$props) $$invalidate(34, tickCount = $$props.tickCount);
+    		if ("tickExtra" in $$props) $$invalidate(35, tickExtra = $$props.tickExtra);
+    		if ("tickValues" in $$props) $$invalidate(36, tickValues = $$props.tickValues);
+    		if ("tickSize" in $$props) $$invalidate(37, tickSize = $$props.tickSize);
+    		if ("tickWidth" in $$props) $$invalidate(5, tickWidth = $$props.tickWidth);
+    		if ("tickColor" in $$props) $$invalidate(6, tickColor = $$props.tickColor);
+    		if ("tickOpacity" in $$props) $$invalidate(7, tickOpacity = $$props.tickOpacity);
+    		if ("labelFormat" in $$props) $$invalidate(38, labelFormat = $$props.labelFormat);
+    		if ("labelOffset" in $$props) $$invalidate(39, labelOffset = $$props.labelOffset);
+    		if ("labelRotate" in $$props) $$invalidate(8, labelRotate = $$props.labelRotate);
+    		if ("labelFont" in $$props) $$invalidate(9, labelFont = $$props.labelFont);
+    		if ("labelFontSize" in $$props) $$invalidate(10, labelFontSize = $$props.labelFontSize);
+    		if ("labelFontWeight" in $$props) $$invalidate(11, labelFontWeight = $$props.labelFontWeight);
+    		if ("labelOpacity" in $$props) $$invalidate(12, labelOpacity = $$props.labelOpacity);
+    		if ("labelColor" in $$props) $$invalidate(13, labelColor = $$props.labelColor);
+    		if ("titleHjust" in $$props) $$invalidate(40, titleHjust = $$props.titleHjust);
+    		if ("titleXOffset" in $$props) $$invalidate(41, titleXOffset = $$props.titleXOffset);
+    		if ("titleVjust" in $$props) $$invalidate(42, titleVjust = $$props.titleVjust);
+    		if ("titleYOffset" in $$props) $$invalidate(43, titleYOffset = $$props.titleYOffset);
+    		if ("title" in $$props) $$invalidate(14, title = $$props.title);
+    		if ("titleColor" in $$props) $$invalidate(15, titleColor = $$props.titleColor);
+    		if ("titleFont" in $$props) $$invalidate(16, titleFont = $$props.titleFont);
+    		if ("titleFontSize" in $$props) $$invalidate(17, titleFontSize = $$props.titleFontSize);
+    		if ("titleFontWeight" in $$props) $$invalidate(18, titleFontWeight = $$props.titleFontWeight);
+    		if ("titleOpacity" in $$props) $$invalidate(19, titleOpacity = $$props.titleOpacity);
+    		if ("titleRotation" in $$props) $$invalidate(20, titleRotation = $$props.titleRotation);
+    		if ("titleAnchorPoint" in $$props) $$invalidate(21, titleAnchorPoint = $$props.titleAnchorPoint);
+    		if ("transition" in $$props) $$invalidate(22, transition = $$props.transition);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		Line,
+    		LineLayer,
+    		Label,
+    		LabelLayer,
+    		SectionContext,
+    		getAbsoluteXPosition,
+    		getBaseLineCoordinatesYAxis,
+    		getTickPositions,
+    		getTickCoordinatesYAxis,
+    		getFormat,
+    		getTickLabelCoordinatesYAxis,
+    		getTextWidth,
+    		getTitleCoordinatesYAxis,
+    		flip,
+    		scale,
+    		baseLine,
+    		baseLineColor,
+    		baseLineOpacity,
+    		baseLineWidth,
+    		hjust,
+    		xOffset,
+    		ticks,
+    		tickCount,
+    		tickExtra,
+    		tickValues,
+    		tickSize,
+    		tickWidth,
+    		tickColor,
+    		tickOpacity,
+    		labelFormat,
+    		labelOffset,
+    		labelRotate,
+    		labelFont,
+    		labelFontSize,
+    		labelFontWeight,
+    		labelOpacity,
+    		labelColor,
+    		titleHjust,
+    		titleXOffset,
+    		titleVjust,
+    		titleYOffset,
+    		title,
+    		titleColor,
+    		titleFont,
+    		titleFontSize,
+    		titleFontWeight,
+    		titleOpacity,
+    		titleRotation,
+    		titleAnchorPoint,
+    		transition,
+    		sectionContext,
+    		$sectionContext,
+    		scaleY,
+    		xAbsolute,
+    		baseLineCoordinates,
+    		tickPositions,
+    		tickCoordinates,
+    		format,
+    		tickLabelText,
+    		tickLabelCoordinates,
+    		labelAnchorPoint,
+    		tickLabelWidth,
+    		axisWidth,
+    		titleCoordinates
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("flip" in $$props) $$invalidate(30, flip = $$props.flip);
+    		if ("scale" in $$props) $$invalidate(31, scale = $$props.scale);
+    		if ("baseLine" in $$props) $$invalidate(0, baseLine = $$props.baseLine);
+    		if ("baseLineColor" in $$props) $$invalidate(1, baseLineColor = $$props.baseLineColor);
+    		if ("baseLineOpacity" in $$props) $$invalidate(2, baseLineOpacity = $$props.baseLineOpacity);
+    		if ("baseLineWidth" in $$props) $$invalidate(3, baseLineWidth = $$props.baseLineWidth);
+    		if ("hjust" in $$props) $$invalidate(32, hjust = $$props.hjust);
+    		if ("xOffset" in $$props) $$invalidate(33, xOffset = $$props.xOffset);
+    		if ("ticks" in $$props) $$invalidate(4, ticks = $$props.ticks);
+    		if ("tickCount" in $$props) $$invalidate(34, tickCount = $$props.tickCount);
+    		if ("tickExtra" in $$props) $$invalidate(35, tickExtra = $$props.tickExtra);
+    		if ("tickValues" in $$props) $$invalidate(36, tickValues = $$props.tickValues);
+    		if ("tickSize" in $$props) $$invalidate(37, tickSize = $$props.tickSize);
+    		if ("tickWidth" in $$props) $$invalidate(5, tickWidth = $$props.tickWidth);
+    		if ("tickColor" in $$props) $$invalidate(6, tickColor = $$props.tickColor);
+    		if ("tickOpacity" in $$props) $$invalidate(7, tickOpacity = $$props.tickOpacity);
+    		if ("labelFormat" in $$props) $$invalidate(38, labelFormat = $$props.labelFormat);
+    		if ("labelOffset" in $$props) $$invalidate(39, labelOffset = $$props.labelOffset);
+    		if ("labelRotate" in $$props) $$invalidate(8, labelRotate = $$props.labelRotate);
+    		if ("labelFont" in $$props) $$invalidate(9, labelFont = $$props.labelFont);
+    		if ("labelFontSize" in $$props) $$invalidate(10, labelFontSize = $$props.labelFontSize);
+    		if ("labelFontWeight" in $$props) $$invalidate(11, labelFontWeight = $$props.labelFontWeight);
+    		if ("labelOpacity" in $$props) $$invalidate(12, labelOpacity = $$props.labelOpacity);
+    		if ("labelColor" in $$props) $$invalidate(13, labelColor = $$props.labelColor);
+    		if ("titleHjust" in $$props) $$invalidate(40, titleHjust = $$props.titleHjust);
+    		if ("titleXOffset" in $$props) $$invalidate(41, titleXOffset = $$props.titleXOffset);
+    		if ("titleVjust" in $$props) $$invalidate(42, titleVjust = $$props.titleVjust);
+    		if ("titleYOffset" in $$props) $$invalidate(43, titleYOffset = $$props.titleYOffset);
+    		if ("title" in $$props) $$invalidate(14, title = $$props.title);
+    		if ("titleColor" in $$props) $$invalidate(15, titleColor = $$props.titleColor);
+    		if ("titleFont" in $$props) $$invalidate(16, titleFont = $$props.titleFont);
+    		if ("titleFontSize" in $$props) $$invalidate(17, titleFontSize = $$props.titleFontSize);
+    		if ("titleFontWeight" in $$props) $$invalidate(18, titleFontWeight = $$props.titleFontWeight);
+    		if ("titleOpacity" in $$props) $$invalidate(19, titleOpacity = $$props.titleOpacity);
+    		if ("titleRotation" in $$props) $$invalidate(20, titleRotation = $$props.titleRotation);
+    		if ("titleAnchorPoint" in $$props) $$invalidate(21, titleAnchorPoint = $$props.titleAnchorPoint);
+    		if ("transition" in $$props) $$invalidate(22, transition = $$props.transition);
+    		if ("scaleY" in $$props) $$invalidate(45, scaleY = $$props.scaleY);
+    		if ("xAbsolute" in $$props) $$invalidate(46, xAbsolute = $$props.xAbsolute);
+    		if ("baseLineCoordinates" in $$props) $$invalidate(23, baseLineCoordinates = $$props.baseLineCoordinates);
+    		if ("tickPositions" in $$props) $$invalidate(47, tickPositions = $$props.tickPositions);
+    		if ("tickCoordinates" in $$props) $$invalidate(24, tickCoordinates = $$props.tickCoordinates);
+    		if ("format" in $$props) $$invalidate(48, format = $$props.format);
+    		if ("tickLabelText" in $$props) $$invalidate(25, tickLabelText = $$props.tickLabelText);
+    		if ("tickLabelCoordinates" in $$props) $$invalidate(26, tickLabelCoordinates = $$props.tickLabelCoordinates);
+    		if ("labelAnchorPoint" in $$props) $$invalidate(27, labelAnchorPoint = $$props.labelAnchorPoint);
+    		if ("tickLabelWidth" in $$props) $$invalidate(49, tickLabelWidth = $$props.tickLabelWidth);
+    		if ("axisWidth" in $$props) $$invalidate(50, axisWidth = $$props.axisWidth);
+    		if ("titleCoordinates" in $$props) $$invalidate(28, titleCoordinates = $$props.titleCoordinates);
+    	};
+
+    	let scaleY;
+    	let xAbsolute;
+    	let baseLineCoordinates;
+    	let tickPositions;
+    	let tickCoordinates;
+    	let format;
+    	let tickLabelText;
+    	let tickLabelCoordinates;
+    	let labelAnchorPoint;
+    	let tickLabelWidth;
+    	let axisWidth;
+    	let titleCoordinates;
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	$$self.$$.update = () => {
+    		if ($$self.$$.dirty[1] & /*$sectionContext*/ 8192) {
+    			// Make sure not polar
+    			 {
+    				if ($sectionContext.transformation === "polar") {
+    					throw new Error("Axes do'nt work with polar coordinates (for now)");
+    				}
+    			}
+    		}
+
+    		if ($$self.$$.dirty[1] & /*scale, $sectionContext*/ 8193) {
+    			// Scale
+    			 $$invalidate(45, scaleY = scale
+    			? scale.copy().range($sectionContext.rangeY)
+    			: $sectionContext.scaleY);
+    		}
+
+    		if ($$self.$$.dirty[1] & /*hjust, xOffset, $sectionContext*/ 8198) {
+    			// Absolute position (in pixels)
+    			 $$invalidate(46, xAbsolute = getAbsoluteXPosition(hjust, xOffset, $sectionContext));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*xAbsolute, $sectionContext*/ 40960) {
+    			// Baseline
+    			 $$invalidate(23, baseLineCoordinates = getBaseLineCoordinatesYAxis(xAbsolute, $sectionContext));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*tickValues, scaleY, tickCount, tickExtra, $sectionContext*/ 24632) {
+    			// Ticks
+    			 $$invalidate(47, tickPositions = getTickPositions(tickValues, scaleY, tickCount, tickExtra, $sectionContext.zoomIdentity
+    			? {
+    					t: $sectionContext.zoomIdentity.y,
+    					k: $sectionContext.zoomIdentity.ky
+    				}
+    			: undefined));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*flip*/ 1073741824 | $$self.$$.dirty[1] & /*tickPositions, xAbsolute, scaleY, $sectionContext, tickSize*/ 122944) {
+    			 $$invalidate(24, tickCoordinates = getTickCoordinatesYAxis(tickPositions, xAbsolute, scaleY, $sectionContext.finalScaleX, tickSize, flip));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*ticks*/ 16 | $$self.$$.dirty[1] & /*labelFormat, $sectionContext*/ 8320) {
+    			// Tick labels
+    			 $$invalidate(48, format = getFormat(labelFormat, $sectionContext.scaleY, ticks.length));
+    		}
+
+    		if ($$self.$$.dirty[1] & /*tickPositions, format*/ 196608) {
+    			 $$invalidate(25, tickLabelText = tickPositions.map(format));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tickCoordinates, flip*/ 1090519040 | $$self.$$.dirty[1] & /*$sectionContext, labelOffset*/ 8448) {
+    			 $$invalidate(26, tickLabelCoordinates = getTickLabelCoordinatesYAxis(tickCoordinates, $sectionContext, labelOffset, flip));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*flip*/ 1073741824) {
+    			 $$invalidate(27, labelAnchorPoint = flip ? "l" : "r");
+    		}
+
+    		if ($$self.$$.dirty[0] & /*tickLabelText, labelFontSize, labelFont*/ 33555968) {
+    			 $$invalidate(49, tickLabelWidth = getTextWidth(tickLabelText[tickLabelText.length - 1], labelFontSize, labelFont));
+    		}
+
+    		if ($$self.$$.dirty[0] & /*baseLineWidth*/ 8 | $$self.$$.dirty[1] & /*tickSize, labelOffset, tickLabelWidth*/ 262464) {
+    			// Title
+    			 $$invalidate(50, axisWidth = baseLineWidth + tickSize + labelOffset + tickLabelWidth);
+    		}
+
+    		if ($$self.$$.dirty[0] & /*flip, titleFontSize*/ 1073872896 | $$self.$$.dirty[1] & /*titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, axisWidth, xAbsolute*/ 572928) {
+    			 $$invalidate(28, titleCoordinates = getTitleCoordinatesYAxis(titleHjust, titleXOffset, titleVjust, titleYOffset, $sectionContext, flip, axisWidth, titleFontSize, xAbsolute));
+    		}
+    	};
+
+    	return [
+    		baseLine,
+    		baseLineColor,
+    		baseLineOpacity,
+    		baseLineWidth,
+    		ticks,
+    		tickWidth,
+    		tickColor,
+    		tickOpacity,
+    		labelRotate,
+    		labelFont,
+    		labelFontSize,
+    		labelFontWeight,
+    		labelOpacity,
+    		labelColor,
+    		title,
+    		titleColor,
+    		titleFont,
+    		titleFontSize,
+    		titleFontWeight,
+    		titleOpacity,
+    		titleRotation,
+    		titleAnchorPoint,
+    		transition,
+    		baseLineCoordinates,
+    		tickCoordinates,
+    		tickLabelText,
+    		tickLabelCoordinates,
+    		labelAnchorPoint,
+    		titleCoordinates,
+    		sectionContext,
+    		flip,
+    		scale,
+    		hjust,
+    		xOffset,
+    		tickCount,
+    		tickExtra,
+    		tickValues,
+    		tickSize,
+    		labelFormat,
+    		labelOffset,
+    		titleHjust,
+    		titleXOffset,
+    		titleVjust,
+    		titleYOffset
+    	];
+    }
+
+    class YAxis extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(
+    			this,
+    			options,
+    			instance$a,
+    			create_fragment$a,
+    			safe_not_equal,
+    			{
+    				flip: 30,
+    				scale: 31,
+    				baseLine: 0,
+    				baseLineColor: 1,
+    				baseLineOpacity: 2,
+    				baseLineWidth: 3,
+    				hjust: 32,
+    				xOffset: 33,
+    				ticks: 4,
+    				tickCount: 34,
+    				tickExtra: 35,
+    				tickValues: 36,
+    				tickSize: 37,
+    				tickWidth: 5,
+    				tickColor: 6,
+    				tickOpacity: 7,
+    				labelFormat: 38,
+    				labelOffset: 39,
+    				labelRotate: 8,
+    				labelFont: 9,
+    				labelFontSize: 10,
+    				labelFontWeight: 11,
+    				labelOpacity: 12,
+    				labelColor: 13,
+    				titleHjust: 40,
+    				titleXOffset: 41,
+    				titleVjust: 42,
+    				titleYOffset: 43,
+    				title: 14,
+    				titleColor: 15,
+    				titleFont: 16,
+    				titleFontSize: 17,
+    				titleFontWeight: 18,
+    				titleOpacity: 19,
+    				titleRotation: 20,
+    				titleAnchorPoint: 21,
+    				transition: 22
+    			},
+    			[-1, -1]
+    		);
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "YAxis",
+    			options,
+    			id: create_fragment$a.name
+    		});
+    	}
+
+    	get flip() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set flip(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get scale() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set scale(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLine() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLine(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLineColor() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLineColor(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLineOpacity() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLineOpacity(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get baseLineWidth() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set baseLineWidth(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get hjust() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set hjust(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get xOffset() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set xOffset(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get ticks() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set ticks(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickCount() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickCount(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickExtra() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickExtra(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickValues() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickValues(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickSize() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickSize(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickWidth() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickWidth(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickColor() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickColor(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get tickOpacity() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set tickOpacity(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFormat() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFormat(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelOffset() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelOffset(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelRotate() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelRotate(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFont() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFont(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFontSize() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFontSize(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelFontWeight() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelFontWeight(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelOpacity() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelOpacity(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get labelColor() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set labelColor(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleHjust() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleHjust(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleXOffset() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleXOffset(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleVjust() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleVjust(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleYOffset() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleYOffset(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get title() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set title(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleColor() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleColor(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleFont() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleFont(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleFontSize() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleFontSize(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleFontWeight() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleFontWeight(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleOpacity() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleOpacity(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleRotation() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleRotation(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get titleAnchorPoint() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set titleAnchorPoint(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get transition() {
+    		throw new Error_1$1("<YAxis>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set transition(value) {
+    		throw new Error_1$1("<YAxis>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
     function createGeoScales (bbox) {
       const domainX = bbox.x;
       const domainY = bbox.y;
@@ -16134,7 +23463,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     /* src/page/component/BaseMap.svelte generated by Svelte v3.21.0 */
 
-    function create_fragment$3(ctx) {
+    function create_fragment$b(ctx) {
     	let current;
 
     	const polygonlayer = new PolygonLayer({
@@ -16142,7 +23471,8 @@ return d[d.length-1];};return ", funcName].join("");
     				geometry: /*hex*/ ctx[0].column("$geometry"),
     				stroke: /*func*/ ctx[4],
     				strokeWidth: /*func_1*/ ctx[5],
-    				fill: hexFill,
+    				fill: "url(#pattern-stripe)",
+    				fillOpacity: "0.4",
     				onMouseover: /*mouseOverHandler*/ ctx[2],
     				onMouseout: /*func_2*/ ctx[6],
     				onClick: /*mouseClickHandler*/ ctx[3]
@@ -16185,7 +23515,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$3.name,
+    		id: create_fragment$b.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16196,7 +23526,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     const hexFill = "#fff";
 
-    function instance$3($$self, $$props, $$invalidate) {
+    function instance$b($$self, $$props, $$invalidate) {
     	let { hex } = $$props;
 
     	////// event Listener
@@ -16252,13 +23582,13 @@ return d[d.length-1];};return ", funcName].join("");
     class BaseMap extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$3, create_fragment$3, safe_not_equal, { hex: 0 });
+    		init(this, options, instance$b, create_fragment$b, safe_not_equal, { hex: 0 });
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "BaseMap",
     			options,
-    			id: create_fragment$3.name
+    			id: create_fragment$b.name
     		});
 
     		const { ctx } = this.$$;
@@ -22325,10 +29655,10 @@ return d[d.length-1];};return ", funcName].join("");
     var schemeAccent = colors("7fc97fbeaed4fdc086ffff99386cb0f0027fbf5b17666666");
 
     /* src/page/component/TopicMap.svelte generated by Svelte v3.21.0 */
-    const file$2 = "src/page/component/TopicMap.svelte";
+    const file$5 = "src/page/component/TopicMap.svelte";
 
-    // (41:2) {#if hoverTopic !== 0}
-    function create_if_block$2(ctx) {
+    // (49:2) {#if hoverTopic !== 0}
+    function create_if_block$5(ctx) {
     	let t;
 
     	const block = {
@@ -22348,16 +29678,16 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block$2.name,
+    		id: create_if_block$5.name,
     		type: "if",
-    		source: "(41:2) {#if hoverTopic !== 0}",
+    		source: "(49:2) {#if hoverTopic !== 0}",
     		ctx
     	});
 
     	return block;
     }
 
-    function create_fragment$4(ctx) {
+    function create_fragment$c(ctx) {
     	let t;
     	let text_1;
     	let current;
@@ -22366,15 +29696,16 @@ return d[d.length-1];};return ", funcName].join("");
     			props: {
     				geometry: /*topicHex*/ ctx[2].column("$geometry"),
     				fill: /*topicHex*/ ctx[2].map("topic", /*myColorScale*/ ctx[3]),
-    				stroke: /*func*/ ctx[5],
-    				strokeWidth: /*func_1*/ ctx[6],
+    				stroke: /*func*/ ctx[6],
+    				strokeWidth: /*func_1*/ ctx[7],
     				onMouseover: /*mouseOverHandler*/ ctx[4],
-    				onMouseout: /*func_2*/ ctx[7]
+    				onMouseout: /*func_2*/ ctx[8],
+    				onClick: /*onClickHandler*/ ctx[5]
     			},
     			$$inline: true
     		});
 
-    	let if_block = /*hoverTopic*/ ctx[0] !== 0 && create_if_block$2(ctx);
+    	let if_block = /*hoverTopic*/ ctx[0] !== 0 && create_if_block$5(ctx);
 
     	const block = {
     		c: function create() {
@@ -22388,7 +29719,7 @@ return d[d.length-1];};return ", funcName].join("");
     			attr_dev(text_1, "fill", "black");
     			attr_dev(text_1, "font-size", "18px");
     			attr_dev(text_1, "font-family", "Acme, sans-serif");
-    			add_location(text_1, file$2, 33, 0, 960);
+    			add_location(text_1, file$5, 41, 0, 1187);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -22402,16 +29733,16 @@ return d[d.length-1];};return ", funcName].join("");
     		},
     		p: function update(ctx, [dirty]) {
     			const polygonlayer_changes = {};
-    			if (dirty & /*selectHexId*/ 2) polygonlayer_changes.stroke = /*func*/ ctx[5];
-    			if (dirty & /*selectHexId*/ 2) polygonlayer_changes.strokeWidth = /*func_1*/ ctx[6];
-    			if (dirty & /*hoverTopic, selectHexId*/ 3) polygonlayer_changes.onMouseout = /*func_2*/ ctx[7];
+    			if (dirty & /*selectHex*/ 2) polygonlayer_changes.stroke = /*func*/ ctx[6];
+    			if (dirty & /*selectHex*/ 2) polygonlayer_changes.strokeWidth = /*func_1*/ ctx[7];
+    			if (dirty & /*hoverTopic, selectHex*/ 3) polygonlayer_changes.onMouseout = /*func_2*/ ctx[8];
     			polygonlayer.$set(polygonlayer_changes);
 
     			if (/*hoverTopic*/ ctx[0] !== 0) {
     				if (if_block) {
     					if_block.p(ctx, dirty);
     				} else {
-    					if_block = create_if_block$2(ctx);
+    					if_block = create_if_block$5(ctx);
     					if_block.c();
     					if_block.m(text_1, null);
     				}
@@ -22439,7 +29770,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$4.name,
+    		id: create_fragment$c.name,
     		type: "component",
     		source: "",
     		ctx
@@ -22448,7 +29779,7 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function instance$4($$self, $$props, $$invalidate) {
+    function instance$c($$self, $$props, $$invalidate) {
 
     	// load data
     	const topicHex = new florenceDatacontainer_umd(TOPIC_HEX);
@@ -22457,11 +29788,17 @@ return d[d.length-1];};return ", funcName].join("");
     	const myColorScale = ordinal().domain(topicHex.domain("topic")).range(schemeAccent);
 
     	let hoverTopic = 0;
-    	let selectHexId;
+    	let selectHex;
 
     	const mouseOverHandler = e => {
-    		$$invalidate(1, selectHexId = e.key);
-    		$$invalidate(0, hoverTopic = topicHex.column("topic")[selectHexId]);
+    		$$invalidate(1, selectHex = e.key);
+    		$$invalidate(0, hoverTopic = topicHex.column("topic")[selectHex]);
+    	};
+
+    	const onClickHandler = e => {
+    		$$invalidate(1, selectHex = e.key);
+    		const clickHexId = topicHex.column("hex_id")[selectHex];
+    		clickHexIdWrite.set(clickHexId); // store
     	};
 
     	const writable_props = [];
@@ -22472,12 +29809,12 @@ return d[d.length-1];};return ", funcName].join("");
 
     	let { $$slots = {}, $$scope } = $$props;
     	validate_slots("TopicMap", $$slots, []);
-    	const func = k => k === selectHexId ? "red" : "white";
-    	const func_1 = k => k === selectHexId ? 2 : 1;
+    	const func = k => k === selectHex ? "red" : "white";
+    	const func_1 = k => k === selectHex ? 2 : 1;
 
     	const func_2 = e => {
     		$$invalidate(0, hoverTopic = 0);
-    		$$invalidate(1, selectHexId = null);
+    		$$invalidate(1, selectHex = null);
     	};
 
     	$$self.$capture_state = () => ({
@@ -22486,16 +29823,18 @@ return d[d.length-1];};return ", funcName].join("");
     		TOPIC_HEX,
     		scaleOrdinal: ordinal,
     		schemeAccent,
+    		clickHexIdWrite,
     		topicHex,
     		myColorScale,
     		hoverTopic,
-    		selectHexId,
-    		mouseOverHandler
+    		selectHex,
+    		mouseOverHandler,
+    		onClickHandler
     	});
 
     	$$self.$inject_state = $$props => {
     		if ("hoverTopic" in $$props) $$invalidate(0, hoverTopic = $$props.hoverTopic);
-    		if ("selectHexId" in $$props) $$invalidate(1, selectHexId = $$props.selectHexId);
+    		if ("selectHex" in $$props) $$invalidate(1, selectHex = $$props.selectHex);
     	};
 
     	if ($$props && "$$inject" in $$props) {
@@ -22504,10 +29843,11 @@ return d[d.length-1];};return ", funcName].join("");
 
     	return [
     		hoverTopic,
-    		selectHexId,
+    		selectHex,
     		topicHex,
     		myColorScale,
     		mouseOverHandler,
+    		onClickHandler,
     		func,
     		func_1,
     		func_2
@@ -22517,14 +29857,421 @@ return d[d.length-1];};return ", funcName].join("");
     class TopicMap extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$4, create_fragment$4, safe_not_equal, {});
+    		init(this, options, instance$c, create_fragment$c, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "TopicMap",
     			options,
-    			id: create_fragment$4.name
+    			id: create_fragment$c.name
     		});
+    	}
+    }
+
+    const TOPIC_COUNT = [{"topic":1,"n":29},{"topic":2,"n":3},{"topic":3,"n":30},{"topic":4,"n":17},{"topic":5,"n":91},{"topic":6,"n":112},{"topic":7,"n":77},{"topic":8,"n":22}];
+
+    /* src/page/component/Barchart.svelte generated by Svelte v3.21.0 */
+    const file$6 = "src/page/component/Barchart.svelte";
+
+    function get_each_context$1(ctx, list, i) {
+    	const child_ctx = ctx.slice();
+    	child_ctx[10] = list[i];
+    	child_ctx[12] = i;
+    	return child_ctx;
+    }
+
+    // (34:4) {#each data as item, index}
+    function create_each_block$1(ctx) {
+    	let current;
+
+    	function func(...args) {
+    		return /*func*/ ctx[7](/*index*/ ctx[12], ...args);
+    	}
+
+    	function func_2(...args) {
+    		return /*func_2*/ ctx[9](/*index*/ ctx[12], ...args);
+    	}
+
+    	const rectangle = new Rectangle({
+    			props: {
+    				x1: /*item*/ ctx[10].topic - 0.4,
+    				y1: 0,
+    				x2: /*item*/ ctx[10].topic + 0.4,
+    				y2: /*item*/ ctx[10].n,
+    				stroke: /*selectChartKey*/ ctx[3] !== /*index*/ ctx[12]
+    				? "white"
+    				: "red",
+    				strokeWidth: "2px",
+    				fill: "url(#pattern-stripe)",
+    				fillOpacity: "0.5",
+    				onMouseover: func,
+    				onMouseout: /*func_1*/ ctx[8],
+    				onClick: func_2
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(rectangle.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(rectangle, target, anchor);
+    			current = true;
+    		},
+    		p: function update(new_ctx, dirty) {
+    			ctx = new_ctx;
+    			const rectangle_changes = {};
+
+    			if (dirty & /*selectChartKey*/ 8) rectangle_changes.stroke = /*selectChartKey*/ ctx[3] !== /*index*/ ctx[12]
+    			? "white"
+    			: "red";
+
+    			if (dirty & /*selectChartKey, hoverTopic*/ 12) rectangle_changes.onMouseover = func;
+    			if (dirty & /*hoverTopic, selectChartKey*/ 12) rectangle_changes.onMouseout = /*func_1*/ ctx[8];
+    			rectangle.$set(rectangle_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(rectangle.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(rectangle.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(rectangle, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_each_block$1.name,
+    		type: "each",
+    		source: "(34:4) {#each data as item, index}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (21:2) <Graphic {width} {height} {scaleX} {scaleY} padding={30} flipY>
+    function create_default_slot(ctx) {
+    	let defs;
+    	let pattern;
+    	let rect;
+    	let t0;
+    	let t1;
+    	let current;
+    	let each_value = /*data*/ ctx[4];
+    	validate_each_argument(each_value);
+    	let each_blocks = [];
+
+    	for (let i = 0; i < each_value.length; i += 1) {
+    		each_blocks[i] = create_each_block$1(get_each_context$1(ctx, each_value, i));
+    	}
+
+    	const out = i => transition_out(each_blocks[i], 1, 1, () => {
+    		each_blocks[i] = null;
+    	});
+
+    	const xaxis = new XAxis({
+    			props: {
+    				tickColor: "white",
+    				baseLineColor: "white",
+    				labelColor: "white"
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			defs = svg_element("defs");
+    			pattern = svg_element("pattern");
+    			rect = svg_element("rect");
+    			t0 = space();
+
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].c();
+    			}
+
+    			t1 = space();
+    			create_component(xaxis.$$.fragment);
+    			attr_dev(rect, "width", "2");
+    			attr_dev(rect, "height", "4");
+    			attr_dev(rect, "transform", "translate(0,0)");
+    			attr_dev(rect, "fill", "white");
+    			add_location(rect, file$6, 29, 8, 811);
+    			attr_dev(pattern, "id", "pattern-stripe");
+    			attr_dev(pattern, "width", "4");
+    			attr_dev(pattern, "height", "4");
+    			attr_dev(pattern, "patternUnits", "userSpaceOnUse");
+    			attr_dev(pattern, "patternTransform", "rotate(45)");
+    			add_location(pattern, file$6, 23, 6, 652);
+    			add_location(defs, file$6, 22, 4, 639);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, defs, anchor);
+    			append_dev(defs, pattern);
+    			append_dev(pattern, rect);
+    			insert_dev(target, t0, anchor);
+
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].m(target, anchor);
+    			}
+
+    			insert_dev(target, t1, anchor);
+    			mount_component(xaxis, target, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty & /*data, selectChartKey, hoverTopic, hoverTopicWrite, clickTopicWrite*/ 28) {
+    				each_value = /*data*/ ctx[4];
+    				validate_each_argument(each_value);
+    				let i;
+
+    				for (i = 0; i < each_value.length; i += 1) {
+    					const child_ctx = get_each_context$1(ctx, each_value, i);
+
+    					if (each_blocks[i]) {
+    						each_blocks[i].p(child_ctx, dirty);
+    						transition_in(each_blocks[i], 1);
+    					} else {
+    						each_blocks[i] = create_each_block$1(child_ctx);
+    						each_blocks[i].c();
+    						transition_in(each_blocks[i], 1);
+    						each_blocks[i].m(t1.parentNode, t1);
+    					}
+    				}
+
+    				group_outros();
+
+    				for (i = each_value.length; i < each_blocks.length; i += 1) {
+    					out(i);
+    				}
+
+    				check_outros();
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+
+    			for (let i = 0; i < each_value.length; i += 1) {
+    				transition_in(each_blocks[i]);
+    			}
+
+    			transition_in(xaxis.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			each_blocks = each_blocks.filter(Boolean);
+
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				transition_out(each_blocks[i]);
+    			}
+
+    			transition_out(xaxis.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(defs);
+    			if (detaching) detach_dev(t0);
+    			destroy_each(each_blocks, detaching);
+    			if (detaching) detach_dev(t1);
+    			destroy_component(xaxis, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_default_slot.name,
+    		type: "slot",
+    		source: "(21:2) <Graphic {width} {height} {scaleX} {scaleY} padding={30} flipY>",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function create_fragment$d(ctx) {
+    	let div;
+    	let current;
+
+    	const graphic = new Graphic({
+    			props: {
+    				width: /*width*/ ctx[0],
+    				height: /*height*/ ctx[1],
+    				scaleX: /*scaleX*/ ctx[5],
+    				scaleY: /*scaleY*/ ctx[6],
+    				padding: 30,
+    				flipY: true,
+    				$$slots: { default: [create_default_slot] },
+    				$$scope: { ctx }
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			create_component(graphic.$$.fragment);
+    			attr_dev(div, "class", "bar svelte-h0kgjd");
+    			add_location(div, file$6, 19, 0, 550);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			mount_component(graphic, div, null);
+    			current = true;
+    		},
+    		p: function update(ctx, [dirty]) {
+    			const graphic_changes = {};
+    			if (dirty & /*width*/ 1) graphic_changes.width = /*width*/ ctx[0];
+    			if (dirty & /*height*/ 2) graphic_changes.height = /*height*/ ctx[1];
+
+    			if (dirty & /*$$scope, selectChartKey, hoverTopic*/ 8204) {
+    				graphic_changes.$$scope = { dirty, ctx };
+    			}
+
+    			graphic.$set(graphic_changes);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(graphic.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(graphic.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    			destroy_component(graphic);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$d.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$d($$self, $$props, $$invalidate) {
+    	let { width = 500 } = $$props;
+    	let { height = 250 } = $$props;
+    	const data = TOPIC_COUNT.sort((a, b) => a.n - b.n);
+    	const scaleX = linear$1().domain([0, data.length + 1]);
+    	const scaleY = linear$1().domain([0, data[data.length - 1].n]);
+    	let hoverTopic = null;
+    	let selectChartKey;
+    	const writable_props = ["width", "height"];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<Barchart> was created with unknown prop '${key}'`);
+    	});
+
+    	let { $$slots = {}, $$scope } = $$props;
+    	validate_slots("Barchart", $$slots, []);
+
+    	const func = (index, e) => {
+    		$$invalidate(3, selectChartKey = index);
+    		$$invalidate(2, hoverTopic = data[selectChartKey].topic);
+    		hoverTopicWrite.set(hoverTopic);
+    	};
+
+    	const func_1 = e => {
+    		$$invalidate(2, hoverTopic = 0);
+    		$$invalidate(3, selectChartKey = null);
+    	};
+
+    	const func_2 = (index, e) => {
+    		const clickTopic = data[index].topic;
+    		clickTopicWrite.set(clickTopic);
+    	};
+
+    	$$self.$set = $$props => {
+    		if ("width" in $$props) $$invalidate(0, width = $$props.width);
+    		if ("height" in $$props) $$invalidate(1, height = $$props.height);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		TOPIC_COUNT,
+    		scaleLinear: linear$1,
+    		Graphic,
+    		Rectangle,
+    		XAxis,
+    		YAxis,
+    		hoverTopicWrite,
+    		clickTopicWrite,
+    		width,
+    		height,
+    		data,
+    		scaleX,
+    		scaleY,
+    		hoverTopic,
+    		selectChartKey
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ("width" in $$props) $$invalidate(0, width = $$props.width);
+    		if ("height" in $$props) $$invalidate(1, height = $$props.height);
+    		if ("hoverTopic" in $$props) $$invalidate(2, hoverTopic = $$props.hoverTopic);
+    		if ("selectChartKey" in $$props) $$invalidate(3, selectChartKey = $$props.selectChartKey);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		width,
+    		height,
+    		hoverTopic,
+    		selectChartKey,
+    		data,
+    		scaleX,
+    		scaleY,
+    		func,
+    		func_1,
+    		func_2
+    	];
+    }
+
+    class Barchart extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+    		init(this, options, instance$d, create_fragment$d, safe_not_equal, { width: 0, height: 1 });
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Barchart",
+    			options,
+    			id: create_fragment$d.name
+    		});
+    	}
+
+    	get width() {
+    		throw new Error("<Barchart>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set width(value) {
+    		throw new Error("<Barchart>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get height() {
+    		throw new Error("<Barchart>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set height(value) {
+    		throw new Error("<Barchart>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
     }
 
@@ -23678,10 +31425,10 @@ return d[d.length-1];};return ", funcName].join("");
     };
 
     /* src/page/component/SGTopic.svelte generated by Svelte v3.21.0 */
-    const file$3 = "src/page/component/SGTopic.svelte";
+    const file$7 = "src/page/component/SGTopic.svelte";
 
-    // (19:2) <Graphic {width} {height} {...geoScale} padding={20} flipY>
-    function create_default_slot(ctx) {
+    // (22:4) <Graphic {width} {height} {...geoScale} padding={20} flipY>
+    function create_default_slot$1(ctx) {
     	let t;
     	let current;
 
@@ -23725,22 +31472,25 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_default_slot.name,
+    		id: create_default_slot$1.name,
     		type: "slot",
-    		source: "(19:2) <Graphic {width} {height} {...geoScale} padding={20} flipY>",
+    		source: "(22:4) <Graphic {width} {height} {...geoScale} padding={20} flipY>",
     		ctx
     	});
 
     	return block;
     }
 
-    function create_fragment$5(ctx) {
-    	let div;
+    function create_fragment$e(ctx) {
+    	let div2;
+    	let div0;
+    	let t;
+    	let div1;
     	let current;
     	const graphic_spread_levels = [{ width }, { height }, /*geoScale*/ ctx[1], { padding: 20 }, { flipY: true }];
 
     	let graphic_props = {
-    		$$slots: { default: [create_default_slot] },
+    		$$slots: { default: [create_default_slot$1] },
     		$$scope: { ctx }
     	};
 
@@ -23749,20 +31499,33 @@ return d[d.length-1];};return ", funcName].join("");
     	}
 
     	const graphic = new Graphic({ props: graphic_props, $$inline: true });
+    	const barchart = new Barchart({ $$inline: true });
 
     	const block = {
     		c: function create() {
-    			div = element("div");
+    			div2 = element("div");
+    			div0 = element("div");
     			create_component(graphic.$$.fragment);
-    			attr_dev(div, "class", "basemap");
-    			add_location(div, file$3, 17, 0, 475);
+    			t = space();
+    			div1 = element("div");
+    			create_component(barchart.$$.fragment);
+    			attr_dev(div0, "class", "basemap svelte-x19gci");
+    			add_location(div0, file$7, 20, 2, 543);
+    			attr_dev(div1, "class", "bar");
+    			add_location(div1, file$7, 27, 2, 699);
+    			attr_dev(div2, "class", "grid-2 svelte-x19gci");
+    			add_location(div2, file$7, 19, 0, 520);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
     		},
     		m: function mount(target, anchor) {
-    			insert_dev(target, div, anchor);
-    			mount_component(graphic, div, null);
+    			insert_dev(target, div2, anchor);
+    			append_dev(div2, div0);
+    			mount_component(graphic, div0, null);
+    			append_dev(div2, t);
+    			append_dev(div2, div1);
+    			mount_component(barchart, div1, null);
     			current = true;
     		},
     		p: function update(ctx, [dirty]) {
@@ -23785,21 +31548,24 @@ return d[d.length-1];};return ", funcName].join("");
     		i: function intro(local) {
     			if (current) return;
     			transition_in(graphic.$$.fragment, local);
+    			transition_in(barchart.$$.fragment, local);
     			current = true;
     		},
     		o: function outro(local) {
     			transition_out(graphic.$$.fragment, local);
+    			transition_out(barchart.$$.fragment, local);
     			current = false;
     		},
     		d: function destroy(detaching) {
-    			if (detaching) detach_dev(div);
+    			if (detaching) detach_dev(div2);
     			destroy_component(graphic);
+    			destroy_component(barchart);
     		}
     	};
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$5.name,
+    		id: create_fragment$e.name,
     		type: "component",
     		source: "",
     		ctx
@@ -23809,9 +31575,9 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     const width = 700;
-    const height = 500;
+    const height = 700;
 
-    function instance$5($$self, $$props, $$invalidate) {
+    function instance$e($$self, $$props, $$invalidate) {
 
     	////// data
     	const hex = new florenceDatacontainer_umd(HEX);
@@ -23831,6 +31597,7 @@ return d[d.length-1];};return ", funcName].join("");
     	$$self.$capture_state = () => ({
     		BaseMap,
     		TopicMap,
+    		Barchart,
     		Graphic,
     		createGeoScales,
     		DataContainer: florenceDatacontainer_umd,
@@ -23847,21 +31614,21 @@ return d[d.length-1];};return ", funcName].join("");
     class SGTopic extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$5, create_fragment$5, safe_not_equal, {});
+    		init(this, options, instance$e, create_fragment$e, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "SGTopic",
     			options,
-    			id: create_fragment$5.name
+    			id: create_fragment$e.name
     		});
     	}
     }
 
     /* src/page/Home.svelte generated by Svelte v3.21.0 */
-    const file$4 = "src/page/Home.svelte";
+    const file$8 = "src/page/Home.svelte";
 
-    function create_fragment$6(ctx) {
+    function create_fragment$f(ctx) {
     	let div1;
     	let div0;
     	let current;
@@ -23872,10 +31639,9 @@ return d[d.length-1];};return ", funcName].join("");
     			div1 = element("div");
     			div0 = element("div");
     			create_component(sgtopic.$$.fragment);
-    			attr_dev(div0, "class", "grid-2 svelte-1gi15en");
-    			add_location(div0, file$4, 5, 2, 93);
+    			add_location(div0, file$8, 5, 2, 93);
     			attr_dev(div1, "class", "home");
-    			add_location(div1, file$4, 4, 0, 72);
+    			add_location(div1, file$8, 4, 0, 72);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -23904,7 +31670,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$6.name,
+    		id: create_fragment$f.name,
     		type: "component",
     		source: "",
     		ctx
@@ -23913,7 +31679,7 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function instance$6($$self, $$props, $$invalidate) {
+    function instance$f($$self, $$props, $$invalidate) {
     	const writable_props = [];
 
     	Object.keys($$props).forEach(key => {
@@ -23929,22 +31695,22 @@ return d[d.length-1];};return ", funcName].join("");
     class Home extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$6, create_fragment$6, safe_not_equal, {});
+    		init(this, options, instance$f, create_fragment$f, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Home",
     			options,
-    			id: create_fragment$6.name
+    			id: create_fragment$f.name
     		});
     	}
     }
 
     /* src/page/About.svelte generated by Svelte v3.21.0 */
 
-    const file$5 = "src/page/About.svelte";
+    const file$9 = "src/page/About.svelte";
 
-    function create_fragment$7(ctx) {
+    function create_fragment$g(ctx) {
     	let h1;
 
     	const block = {
@@ -23952,7 +31718,7 @@ return d[d.length-1];};return ", funcName].join("");
     			h1 = element("h1");
     			h1.textContent = "About";
     			attr_dev(h1, "class", "svelte-afoak4");
-    			add_location(h1, file$5, 4, 0, 21);
+    			add_location(h1, file$9, 4, 0, 21);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -23970,7 +31736,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$7.name,
+    		id: create_fragment$g.name,
     		type: "component",
     		source: "",
     		ctx
@@ -23979,7 +31745,7 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function instance$7($$self, $$props) {
+    function instance$g($$self, $$props) {
     	const writable_props = [];
 
     	Object.keys($$props).forEach(key => {
@@ -23994,22 +31760,22 @@ return d[d.length-1];};return ", funcName].join("");
     class About extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$7, create_fragment$7, safe_not_equal, {});
+    		init(this, options, instance$g, create_fragment$g, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "About",
     			options,
-    			id: create_fragment$7.name
+    			id: create_fragment$g.name
     		});
     	}
     }
 
     /* src/App.svelte generated by Svelte v3.21.0 */
-    const file$6 = "src/App.svelte";
+    const file$a = "src/App.svelte";
 
     // (37:30) 
-    function create_if_block_1$2(ctx) {
+    function create_if_block_1$5(ctx) {
     	let current;
     	const about = new About({ $$inline: true });
 
@@ -24037,7 +31803,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_1$2.name,
+    		id: create_if_block_1$5.name,
     		type: "if",
     		source: "(37:30) ",
     		ctx
@@ -24047,7 +31813,7 @@ return d[d.length-1];};return ", funcName].join("");
     }
 
     // (35:4) {#if nav === 'home'}
-    function create_if_block$3(ctx) {
+    function create_if_block$6(ctx) {
     	let current;
     	const home = new Home({ $$inline: true });
 
@@ -24075,7 +31841,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block$3.name,
+    		id: create_if_block$6.name,
     		type: "if",
     		source: "(35:4) {#if nav === 'home'}",
     		ctx
@@ -24084,7 +31850,7 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function create_fragment$8(ctx) {
+    function create_fragment$h(ctx) {
     	let main;
     	let ul;
     	let a0;
@@ -24100,7 +31866,7 @@ return d[d.length-1];};return ", funcName].join("");
     	let if_block;
     	let current;
     	let dispose;
-    	const if_block_creators = [create_if_block$3, create_if_block_1$2];
+    	const if_block_creators = [create_if_block$6, create_if_block_1$5];
     	const if_blocks = [];
 
     	function select_block_type(ctx, dirty) {
@@ -24127,16 +31893,16 @@ return d[d.length-1];};return ", funcName].join("");
     			if (if_block) if_block.c();
     			attr_dev(a0, "href", "/");
     			attr_dev(a0, "class", a0_class_value = "" + (null_to_empty(/*class1*/ ctx[1]) + " svelte-j7qj95"));
-    			add_location(a0, file$6, 25, 4, 433);
+    			add_location(a0, file$a, 25, 4, 433);
     			attr_dev(a1, "href", "/");
     			attr_dev(a1, "class", a1_class_value = "" + (null_to_empty(/*class2*/ ctx[2]) + " svelte-j7qj95"));
-    			add_location(a1, file$6, 28, 4, 532);
+    			add_location(a1, file$a, 28, 4, 532);
     			attr_dev(ul, "class", "topnav svelte-j7qj95");
-    			add_location(ul, file$6, 24, 2, 409);
+    			add_location(ul, file$a, 24, 2, 409);
     			attr_dev(div, "class", "svelte-j7qj95");
-    			add_location(div, file$6, 33, 2, 640);
+    			add_location(div, file$a, 33, 2, 640);
     			attr_dev(main, "class", "svelte-j7qj95");
-    			add_location(main, file$6, 23, 0, 400);
+    			add_location(main, file$a, 23, 0, 400);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -24224,7 +31990,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$8.name,
+    		id: create_fragment$h.name,
     		type: "component",
     		source: "",
     		ctx
@@ -24233,7 +31999,7 @@ return d[d.length-1];};return ", funcName].join("");
     	return block;
     }
 
-    function instance$8($$self, $$props, $$invalidate) {
+    function instance$h($$self, $$props, $$invalidate) {
     	let { nav = "home" } = $$props;
     	let class1, class2;
     	const writable_props = ["nav"];
@@ -24289,13 +32055,13 @@ return d[d.length-1];};return ", funcName].join("");
     class App extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$8, create_fragment$8, safe_not_equal, { nav: 0 });
+    		init(this, options, instance$h, create_fragment$h, safe_not_equal, { nav: 0 });
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "App",
     			options,
-    			id: create_fragment$8.name
+    			id: create_fragment$h.name
     		});
     	}
 

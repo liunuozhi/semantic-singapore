@@ -6,7 +6,7 @@
   ////// set up
   export let hex;
   const hexFill = "#fff";
-  
+
   ////// event Listener
   // select Hex
   let selectHexId = null;
@@ -23,7 +23,8 @@
   geometry={hex.column('$geometry')}
   stroke={k => (k === selectHexId ? 'red' : 'white')}
   strokeWidth={k => (k === selectHexId ? 2 : 1)}
-  fill={hexFill}
+  fill="url(#pattern-stripe)"
+  fillOpacity="0.4"
   onMouseover={mouseOverHandler}
   onMouseout={e => (selectHexId = null)}
   onClick={mouseClickHandler} />
