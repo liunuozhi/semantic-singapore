@@ -1,6 +1,10 @@
 <script>
   import SGTopic from "./component/SGTopic.svelte";
   import TextView from "./component/TextView.svelte";
+  import { clickHexIdWrite } from "./component/store.js";
+
+  let clickHex = 0;
+  clickHexIdWrite.subscribe(val => (clickHex = val));
 </script>
 
 <div class="home">
@@ -8,15 +12,16 @@
     <SGTopic />
   </div>
 
-  <div class="text-view">
-    <TextView />
-  </div>
+  {#if clickHex !== 0}
+    <div class="text-view">
+      <TextView />
+    </div>
+  {/if}
 
 </div>
 
 <style>
   .text-view {
-    height: 100vh;
     border: 2px solid white;
     border-radius: 25px;
     padding: 40px 40px 40px;
