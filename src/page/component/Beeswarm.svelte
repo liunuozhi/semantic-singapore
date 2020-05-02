@@ -5,11 +5,13 @@
   import DataContainer from "@snlab/florence-datacontainer";
   import { TRIGRAM_HEX } from "./trigram_hex.js";
   import { TRIGRAM_COUNT } from "./trigramCount.js";
-  import { hoverWordWrite, clickWordWrite } from "./store.js";
+  import { hoverWordWrite, clickWordWrite, clickTopicWrite } from "./store.js";
 
   //////load data
   // const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count
   let topicTerms = 0;
+  let clickTopic = 0;
+  clickTopicWrite.subscribe(val => clickTopic = val)
   const queryTopicTerm = async () => {
     const query = await fetch("data/topicTerms.json")
       .then(res => res.json())
@@ -33,7 +35,7 @@
   const fontSize = 12; // label of circle & Axis
 
   let circles = [];
-  const simualateCollision = data => {
+  const simualateCollision = (data, radiusRange) => {
     let rangeCount = new DataContainer(data).domain("beta");
     // const rangeCountLowerBound = rangeCount[0] - 100;
     // const rangeCountUpperBound = rangeCount[1] + 100;
@@ -45,7 +47,7 @@
       .range([0, width]);
     const scaleRadius = scaleLinear()
       .domain(rangeCount)
-      .range([10, 40]);
+      .range(radiusRange);
 
     // copy data to a new container and format the data structures
     circles = data
@@ -67,8 +69,13 @@
   queryTopicTerm();
 
   $: {
-    if (topicTerms !== 0) {
-      simualateCollision(topicTerms)
+    if (topicTerms !== 0 ) {
+      simualateCollision(topicTerms, [10, 40])
+    }
+
+    if (clickTopic !== 0 ) {
+      const topicTermsFilter = topicTerms.filter(item => item.topic === clickTopic)
+      simualateCollision(topicTermsFilter, [20, 60])
     }
   }
 

@@ -34251,11 +34251,11 @@ return d[d.length-1];};return ", funcName].join("");
 
     function get_each_context$2(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[8] = list[i];
+    	child_ctx[9] = list[i];
     	return child_ctx;
     }
 
-    // (104:38) {:else}
+    // (111:38) {:else}
     function create_else_block(ctx) {
     	let t;
 
@@ -34276,14 +34276,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_else_block.name,
     		type: "else",
-    		source: "(104:38) {:else}",
+    		source: "(111:38) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (104:6) {#if hoverWord !== 0}
+    // (111:6) {#if hoverWord !== 0}
     function create_if_block$6(ctx) {
     	let t;
 
@@ -34306,14 +34306,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_if_block$6.name,
     		type: "if",
-    		source: "(104:6) {#if hoverWord !== 0}",
+    		source: "(111:6) {#if hoverWord !== 0}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (106:4) {#each circles as circle}
+    // (113:4) {#each circles as circle}
     function create_each_block$2(ctx) {
     	let circle;
     	let circle_cx_value;
@@ -34321,7 +34321,7 @@ return d[d.length-1];};return ", funcName].join("");
     	let circle_r_value;
     	let t0;
     	let text_1;
-    	let t1_value = /*circle*/ ctx[8].data.term + "";
+    	let t1_value = /*circle*/ ctx[9].data.term + "";
     	let t1;
     	let text_1_x_value;
     	let text_1_y_value;
@@ -34333,19 +34333,19 @@ return d[d.length-1];};return ", funcName].join("");
     			t0 = space();
     			text_1 = svg_element("text");
     			t1 = text(t1_value);
-    			attr_dev(circle, "cx", circle_cx_value = /*circle*/ ctx[8].x);
-    			attr_dev(circle, "cy", circle_cy_value = /*circle*/ ctx[8].y);
-    			attr_dev(circle, "r", circle_r_value = /*circle*/ ctx[8].radius - 2);
+    			attr_dev(circle, "cx", circle_cx_value = /*circle*/ ctx[9].x);
+    			attr_dev(circle, "cy", circle_cy_value = /*circle*/ ctx[9].y);
+    			attr_dev(circle, "r", circle_r_value = /*circle*/ ctx[9].radius - 2);
     			attr_dev(circle, "fill", circleColor);
     			attr_dev(circle, "fill-opacity", opacityCircle);
-    			add_location(circle, file$7, 106, 6, 3065);
-    			attr_dev(text_1, "x", text_1_x_value = /*circle*/ ctx[8].x);
+    			add_location(circle, file$7, 113, 6, 3359);
+    			attr_dev(text_1, "x", text_1_x_value = /*circle*/ ctx[9].x);
     			attr_dev(text_1, "text-anchor", "middle");
-    			attr_dev(text_1, "y", text_1_y_value = /*circle*/ ctx[8].y);
+    			attr_dev(text_1, "y", text_1_y_value = /*circle*/ ctx[9].y);
     			attr_dev(text_1, "fill", labelColor);
     			attr_dev(text_1, "font-size", fontSize);
     			attr_dev(text_1, "opacity", opacityText);
-    			add_location(text_1, file$7, 112, 6, 3220);
+    			add_location(text_1, file$7, 119, 6, 3514);
     		},
     		m: function mount(target, anchor, remount) {
     			insert_dev(target, circle, anchor);
@@ -34361,25 +34361,25 @@ return d[d.length-1];};return ", funcName].join("");
     			];
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*circles*/ 1 && circle_cx_value !== (circle_cx_value = /*circle*/ ctx[8].x)) {
+    			if (dirty & /*circles*/ 1 && circle_cx_value !== (circle_cx_value = /*circle*/ ctx[9].x)) {
     				attr_dev(circle, "cx", circle_cx_value);
     			}
 
-    			if (dirty & /*circles*/ 1 && circle_cy_value !== (circle_cy_value = /*circle*/ ctx[8].y)) {
+    			if (dirty & /*circles*/ 1 && circle_cy_value !== (circle_cy_value = /*circle*/ ctx[9].y)) {
     				attr_dev(circle, "cy", circle_cy_value);
     			}
 
-    			if (dirty & /*circles*/ 1 && circle_r_value !== (circle_r_value = /*circle*/ ctx[8].radius - 2)) {
+    			if (dirty & /*circles*/ 1 && circle_r_value !== (circle_r_value = /*circle*/ ctx[9].radius - 2)) {
     				attr_dev(circle, "r", circle_r_value);
     			}
 
-    			if (dirty & /*circles*/ 1 && t1_value !== (t1_value = /*circle*/ ctx[8].data.term + "")) set_data_dev(t1, t1_value);
+    			if (dirty & /*circles*/ 1 && t1_value !== (t1_value = /*circle*/ ctx[9].data.term + "")) set_data_dev(t1, t1_value);
 
-    			if (dirty & /*circles*/ 1 && text_1_x_value !== (text_1_x_value = /*circle*/ ctx[8].x)) {
+    			if (dirty & /*circles*/ 1 && text_1_x_value !== (text_1_x_value = /*circle*/ ctx[9].x)) {
     				attr_dev(text_1, "x", text_1_x_value);
     			}
 
-    			if (dirty & /*circles*/ 1 && text_1_y_value !== (text_1_y_value = /*circle*/ ctx[8].y)) {
+    			if (dirty & /*circles*/ 1 && text_1_y_value !== (text_1_y_value = /*circle*/ ctx[9].y)) {
     				attr_dev(text_1, "y", text_1_y_value);
     			}
     		},
@@ -34395,14 +34395,14 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_each_block$2.name,
     		type: "each",
-    		source: "(106:4) {#each circles as circle}",
+    		source: "(113:4) {#each circles as circle}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (96:2) <Graphic {width} {height} padding={20} >
+    // (103:2) <Graphic {width} {height} padding={20} >
     function create_default_slot$1(ctx) {
     	let text_1;
     	let text_1_x_value;
@@ -34441,7 +34441,7 @@ return d[d.length-1];};return ", funcName].join("");
     			attr_dev(text_1, "fill", "white");
     			attr_dev(text_1, "font-size", "18px");
     			attr_dev(text_1, "font-family", "Acme, sans-serif");
-    			add_location(text_1, file$7, 96, 4, 2804);
+    			add_location(text_1, file$7, 103, 4, 3098);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, text_1, anchor);
@@ -34504,7 +34504,7 @@ return d[d.length-1];};return ", funcName].join("");
     		block,
     		id: create_default_slot$1.name,
     		type: "slot",
-    		source: "(96:2) <Graphic {width} {height} padding={20} >",
+    		source: "(103:2) <Graphic {width} {height} padding={20} >",
     		ctx
     	});
 
@@ -34531,7 +34531,7 @@ return d[d.length-1];};return ", funcName].join("");
     			div = element("div");
     			create_component(graphic.$$.fragment);
     			attr_dev(div, "id", "beeswarm");
-    			add_location(div, file$7, 93, 0, 2736);
+    			add_location(div, file$7, 100, 0, 3030);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -34544,7 +34544,7 @@ return d[d.length-1];};return ", funcName].join("");
     		p: function update(ctx, [dirty]) {
     			const graphic_changes = {};
 
-    			if (dirty & /*$$scope, circles, hoverWord*/ 2051) {
+    			if (dirty & /*$$scope, circles, hoverWord*/ 4099) {
     				graphic_changes.$$scope = { dirty, ctx };
     			}
 
@@ -34595,6 +34595,8 @@ return d[d.length-1];};return ", funcName].join("");
 
     function instance$f($$self, $$props, $$invalidate) {
     	let topicTerms = 0;
+    	let clickTopic = 0;
+    	clickTopicWrite.subscribe(val => $$invalidate(6, clickTopic = val));
 
     	const queryTopicTerm = async () => {
     		const query = await fetch("data/topicTerms.json").then(res => res.json()).then(res => $$invalidate(5, topicTerms = res));
@@ -34602,7 +34604,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	let circles = [];
 
-    	const simualateCollision = data => {
+    	const simualateCollision = (data, radiusRange) => {
     		let rangeCount = new florenceDatacontainer_umd(data).domain("beta");
 
     		// const rangeCountLowerBound = rangeCount[0] - 100;
@@ -34611,7 +34613,7 @@ return d[d.length-1];};return ", funcName].join("");
     		// scale the data for x position and radius
     		const scaleX = linear$1().domain(rangeCount).range([0, width]);
 
-    		const scaleRadius = linear$1().domain(rangeCount).range([10, 40]);
+    		const scaleRadius = linear$1().domain(rangeCount).range(radiusRange);
 
     		// copy data to a new container and format the data structures
     		$$invalidate(0, circles = data.map(d => ({
@@ -34672,7 +34674,9 @@ return d[d.length-1];};return ", funcName].join("");
     		TRIGRAM_COUNT,
     		hoverWordWrite,
     		clickWordWrite,
+    		clickTopicWrite,
     		topicTerms,
+    		clickTopic,
     		queryTopicTerm,
     		width,
     		height,
@@ -34693,6 +34697,7 @@ return d[d.length-1];};return ", funcName].join("");
 
     	$$self.$inject_state = $$props => {
     		if ("topicTerms" in $$props) $$invalidate(5, topicTerms = $$props.topicTerms);
+    		if ("clickTopic" in $$props) $$invalidate(6, clickTopic = $$props.clickTopic);
     		if ("circles" in $$props) $$invalidate(0, circles = $$props.circles);
     		if ("hoverWord" in $$props) $$invalidate(1, hoverWord = $$props.hoverWord);
     	};
@@ -34702,10 +34707,15 @@ return d[d.length-1];};return ", funcName].join("");
     	}
 
     	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*topicTerms*/ 32) {
+    		if ($$self.$$.dirty & /*topicTerms, clickTopic*/ 96) {
     			 {
     				if (topicTerms !== 0) {
-    					simualateCollision(topicTerms);
+    					simualateCollision(topicTerms, [10, 40]);
+    				}
+
+    				if (clickTopic !== 0) {
+    					const topicTermsFilter = topicTerms.filter(item => item.topic === clickTopic);
+    					simualateCollision(topicTermsFilter, [20, 60]);
     				}
     			}
     		}
