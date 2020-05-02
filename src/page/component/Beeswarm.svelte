@@ -8,7 +8,15 @@
   import { hoverWordWrite, clickWordWrite } from "./store.js";
 
   //////load data
-  const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count
+  // const trigramCountContainer = new DataContainer(TRIGRAM_COUNT); // gram, count
+  let topicTerms = 0;
+  const queryTopicTerm = async () => {
+    const query = await fetch("data/topicTerms.json")
+      .then(res => res.json())
+      .then(res => (topicTerms = res));
+  };
+
+
 
   ///// set up
   const width = 500; // canvas
@@ -24,33 +32,47 @@
   const opacityText = 0.8; // label of circle
   const fontSize = 12; // label of circle & Axis
 
-  // countGram <= count all gram regarding hexID
-  let rangeCount = trigramCountContainer.domain("count");
-  const rangeCountLowerBound = rangeCount[0] - 100;
-  const rangeCountUpperBound = rangeCount[1] + 100;
-  rangeCount = [rangeCountLowerBound, rangeCountUpperBound];
+  let circles = [];
+  const simualateCollision = data => {
+    let rangeCount = new DataContainer(data).domain("beta");
+    // const rangeCountLowerBound = rangeCount[0] - 100;
+    // const rangeCountUpperBound = rangeCount[1] + 100;
+    // rangeCount = [rangeCountLowerBound, rangeCountUpperBound];
 
-  // scale the data for x position and radius
-  const scaleX = scaleLinear()
-    .domain(rangeCount)
-    .range([0, width]);
-  const scaleRadius = scaleLinear()
-    .domain(rangeCount)
-    .range([10, 40]);
-  // copy data to a new container and format the data structures
-  let circles = TRIGRAM_COUNT.map(d => ({
-    x: scaleX(d.count),
-    y: height / 2,
-    radius: scaleRadius(d.count),
-    data: d
-  })).sort((a, b) => a.x - b.x);
-  // run simulation
-  const simulation = forceSimulation(circles)
-    .force("collide", forceCollide(d => d.radius))
-    .force("x", forceX(width / 2))
-    .force("y", forceY(height / 2 + 15))
-    .on("tick", () => (circles = circles));
+    // scale the data for x position and radius
+    const scaleX = scaleLinear()
+      .domain(rangeCount)
+      .range([0, width]);
+    const scaleRadius = scaleLinear()
+      .domain(rangeCount)
+      .range([10, 40]);
 
+    // copy data to a new container and format the data structures
+    circles = data
+      .map(d => ({
+        x: scaleX(d.beta),
+        y: height / 2,
+        radius: scaleRadius(d.beta),
+        data: d
+      }))
+      .sort((a, b) => a.x - b.x);
+    // run simulation
+    const simulation = forceSimulation(circles)
+      .force("collide", forceCollide(d => d.radius))
+      .force("x", forceX(width / 2))
+      .force("y", forceY(height / 2 + 15))
+      .on("tick", () => (circles = circles));
+  };
+
+  queryTopicTerm();
+
+  $: {
+    if (topicTerms !== 0) {
+      simualateCollision(topicTerms)
+    }
+  }
+
+  // event handler
   let hoverWord = 0;
   const mouseoverHandler = e => {
     e.target.style.fontSize = 20;
@@ -90,15 +112,15 @@
         fill-opacity={opacityCircle} />
       <text
         x={circle.x}
+        text-anchor="middle"
         y={circle.y}
         fill={labelColor}
         font-size={fontSize}
         opacity={opacityText}
-        text-anchor="middle"
         on:mouseover={mouseoverHandler}
         on:mouseout={mouseoutHandler}
         on:click={clickHandler}>
-        {circle.data.gram}
+        {circle.data.term}
       </text>
     {/each}
 
