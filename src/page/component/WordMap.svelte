@@ -1,53 +1,55 @@
 <script>
   "use strict";
-  import { hoverWordWrite, clickWordWrite } from "./store.js";
+  import { clickTopicWrite } from "./store.js";
   import { PolygonLayer } from "@snlab/florence";
   import { TRIGRAM_HEX } from "./trigram_hex.js";
   import DataContainer from "@snlab/florence-datacontainer";
 
   ////// set up
+  const hexFill = "white";
   export let hex;
-  const hexFill = "#54918d";
+  export let selectWord;
+  let clickTopic = 0;
+  clickTopicWrite.subscribe(val => (clickTopic = val));
 
-  // TODO: filter hexgon by word
-  const trigramHexContainer = new DataContainer(TRIGRAM_HEX);
-  ////// event Listener
-  // select Hex
-  let selectHexId = null;
-  let hoverWord = 0;
-  let clickWord = 0;
-
-  let filterHex;
-
-  hoverWordWrite.subscribe(value => (hoverWord = value));
-  clickWordWrite.subscribe(value => (clickWord = value));
-
-  const mouseOverHandler = e => {
-    selectHexId = e.key;
+  let hexTerms = 0;
+  const queryHexTerm = async () => {
+    const res = await fetch("data/hexTerm.json")
+      .then(res => res.json())
+      .then(res => (hexTerms = new DataContainer(res)));
   };
 
-  const showWordHex = word => {
-    const wordHex = trigramHexContainer
+  let filterHex = hexTerms;
+  const filterHexTerm = word => {
+    const wordHexId = hexTerms
       .filter(row => row.gram === word)
       .column("hex_id");
     filterHex = hex.filter(row => {
-      return wordHex.includes(Number(row.hex_id));
+      return wordHexId.includes(row.hex_id);
     });
   };
 
+  queryHexTerm();
   $: {
-    if (hoverWord !== 0) {
-      showWordHex(hoverWord);
-    } else {
-      showWordHex(clickWord);
+    if (selectWord !== 0 && hexTerms !== 0) {
+      filterHexTerm(selectWord);
     }
   }
+
+  ////// event Listener
+  // select Hex
+  let selectHexId = null;
+  const mouseOverHandler = e => {
+    selectHexId = e.key;
+  };
 </script>
 
-<PolygonLayer
-  geometry={filterHex.column('$geometry')}
-  stroke={k => (k === selectHexId ? 'red' : 'white')}
-  strokeWidth={k => (k === selectHexId ? 2 : 1)}
-  fill={hexFill}
-  onMouseover={mouseOverHandler}
-  onMouseout={e => (selectHexId = null)} />
+{#if hexTerms !== 0}
+  <PolygonLayer
+    geometry={filterHex.column('$geometry')}
+    stroke={k => (k === selectHexId ? 'red' : 'white')}
+    strokeWidth={k => (k === selectHexId ? 2 : 1)}
+    fill={hexFill}
+    onMouseover={mouseOverHandler}
+    onMouseout={e => (selectHexId = null)} />
+{/if}

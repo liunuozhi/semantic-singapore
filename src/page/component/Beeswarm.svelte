@@ -37,9 +37,6 @@
   let circles = [];
   const simualateCollision = (data, radiusRange) => {
     let rangeCount = new DataContainer(data).domain("beta");
-    // const rangeCountLowerBound = rangeCount[0] - 100;
-    // const rangeCountUpperBound = rangeCount[1] + 100;
-    // rangeCount = [rangeCountLowerBound, rangeCountUpperBound];
 
     // scale the data for x position and radius
     const scaleX = scaleLinear()
