@@ -2,7 +2,6 @@
   "use strict";
   import { clickTopicWrite } from "./store.js";
   import { PolygonLayer } from "@snlab/florence";
-  import { TRIGRAM_HEX } from "./trigram_hex.js";
   import DataContainer from "@snlab/florence-datacontainer";
 
   ////// set up

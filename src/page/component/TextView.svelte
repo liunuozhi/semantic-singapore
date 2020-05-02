@@ -42,6 +42,8 @@
         {item[1].title}
       </button>
     {/each}
+  {:catch error}
+    <p>Cannot find data.</p>
   {/await}
 
   {#if articleText !== ''}

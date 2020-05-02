@@ -3,7 +3,6 @@
   import { forceSimulation, forceX, forceY, forceCollide } from "d3-force";
   import { Graphic, Point, Label, XAxis } from "@snlab/florence";
   import DataContainer from "@snlab/florence-datacontainer";
-  import { TRIGRAM_HEX } from "./trigram_hex.js";
   import { TRIGRAM_COUNT } from "./trigramCount.js";
   import { hoverWordWrite, clickWordWrite, clickTopicWrite } from "./store.js";
 
@@ -17,8 +16,6 @@
       .then(res => res.json())
       .then(res => (topicTerms = res));
   };
-
-
 
   ///// set up
   const width = 500; // canvas
