@@ -1,4 +1,4 @@
-# semantic-singapore
+# wiki-city
 Exploring contextual semantics in Singapore: Using spatial-temporal model for mining POIs and traffic data
 
 ## Get started
@@ -6,7 +6,7 @@ Exploring contextual semantics in Singapore: Using spatial-temporal model for mi
 Install the dependencies...
 
 ```bash
-cd semantic-singapore
+cd wiki-city
 npm install
 npm run dev
 ```
