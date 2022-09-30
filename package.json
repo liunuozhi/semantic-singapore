@@ -16,12 +16,12 @@
     "svelte": "^3.21.0"
   },
   "dependencies": {
-    "@snlab/florence": "^0.1.20",
+    "@snlab/florence": "^0.4.0",
     "@snlab/florence-datacontainer": "^0.1.9",
     "d3-dsv": "^1.2.0",
     "d3-force": "^2.0.1",
-    "d3-scale": "^3.2.1",
-    "d3-scale-chromatic": "^1.5.0",
+    "d3-scale": "^4.0.2",
+    "d3-scale-chromatic": "^3.0.0",
     "firebase": "^7.14.2",
     "mapbox-gl": "^1.9.1",
     "sirv-cli": "^0.4.4",
